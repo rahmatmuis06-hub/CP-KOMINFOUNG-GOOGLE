@@ -101,7 +101,7 @@ function parseIndonesianDate(dateStr) {
  */
 function migrateFromOldSpreadsheet() {
   try {
-    const OLD_SPREADSHEET_ID = '1_s8PykfM8gK5eDnQtE6dxmeDj-_TOk1vqc3qHkDbf-w';
+    const OLD_SPREADSHEET_ID = PropertiesService.getScriptProperties().getProperty('OLD_SPREADSHEET_ID') || '';
 
     // Buka spreadsheet lama
     let oldSs;

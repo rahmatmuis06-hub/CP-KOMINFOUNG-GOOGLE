@@ -7,9 +7,9 @@
  * Root Folder ID sudah ditentukan.
  */
 
-// ID folder Google Drive untuk masing-masing jenis karya
-const FOLDER_DESAIN_ID = '1loi9fCX5xK_djBjQsJPwTGDHGfZELlOZ';
-const FOLDER_VIDEO_ID = '1U86cbUTleuKzP8sEBBNfqlic4UJ28i6O';
+// ID folder Google Drive untuk masing-masing jenis karya diambil dari Script Properties
+const FOLDER_DESAIN_ID = PropertiesService.getScriptProperties().getProperty('FOLDER_DESAIN_ID') || '';
+const FOLDER_VIDEO_ID = PropertiesService.getScriptProperties().getProperty('FOLDER_VIDEO_ID') || '';
 
 /**
  * Mengambil daftar subfolder langsung di dalam folder tertentu (non-recursive / lazy load).

@@ -6,9 +6,9 @@
  * 2. Daftar Kepanitiaan Anggota Kominfo.
  */
 
-// Konstanta ID Spreadsheet Eksternal
-const SPREADSHEET_PROKER_ID = '1q0L1GYAN6t8rgrOeCrxt2bAX1yObTMIz8Mxf11jp0G0';
-const SPREADSHEET_KEPANITIAAN_ID = '13RoL3l-JFXk_lXnJK8p7_sBgTuAAOuRh6rkeEaeovBg';
+// Konstanta ID Spreadsheet Eksternal diambil dari Script Properties
+const SPREADSHEET_PROKER_ID = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_PROKER_ID') || '';
+const SPREADSHEET_KEPANITIAAN_ID = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_KEPANITIAAN_ID') || '';
 
 /**
  * Mengambil data Program Kerja (Proker) dari spreadsheet eksternal.
