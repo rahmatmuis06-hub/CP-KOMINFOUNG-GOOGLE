@@ -2816,8 +2816,8 @@ function loadNotificationSettings() {
   google.script.run
     .withSuccessHandler(function(settings) {
       if (settings) {
-        // Simpan token asli di memory untuk disubmit kembali jika user tidak mengubah password input
-        App.fonnteToken = settings.token || '';
+        // Simpan token bertopeng di memory untuk disubmit kembali jika user tidak mengubah input
+        App.fonnteTokenMasked = settings.maskedToken || '';
         
         // WhatsApp Fonnte Settings
         const tokenInput = document.getElementById('fonnte-token');
@@ -2876,7 +2876,7 @@ function saveIntegrationSettings() {
   }
   
   showLoading();
-  const tokenToSend = token ? token : (App.fonnteToken || '');
+  const tokenToSend = token ? token : (App.fonnteTokenMasked || '');
   
   google.script.run
     .withSuccessHandler(function(success) {

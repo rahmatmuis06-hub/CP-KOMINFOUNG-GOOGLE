@@ -48,7 +48,9 @@ function initialSetup() {
       'Ratio',
       'Status',
       'File_URL',
-      'Format'
+      'Format',
+      'Description',
+      'Event_ID'
     ];
 
     masterContentSheet.getRange(1, 1, 1, contentHeaders.length).setValues([contentHeaders]);

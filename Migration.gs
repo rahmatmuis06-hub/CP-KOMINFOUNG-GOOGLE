@@ -115,8 +115,8 @@ function migrateFromOldSpreadsheet() {
     const newSheet = getSheet('Master_Content');
 
     // Ambil data yang sudah ada di sheet baru untuk menentukan nomor ID berikutnya
-    const existingLastRow = newSheet.getLastRow();
-    let idCounter = existingLastRow > 0 ? existingLastRow : 1;
+    const lastNum = getLastContentNumber();
+    let idCounter = lastNum + 1;
 
     // Kumpulkan semua data migrasi
     const allMigratedRows = [];
@@ -210,9 +210,9 @@ function migrateFromOldSpreadsheet() {
           }
 
           // Generate ID baru
-          idCounter++;
           const year = new Date().getFullYear();
-          const contentId = `CNT-${year}-${String(idCounter - 1).padStart(3, '0')}`;
+          const contentId = `CNT-${year}-${String(idCounter).padStart(3, '0')}`;
+          idCounter++;
 
           // Hitung Bulan_Tahun dari tanggal
           const bulanTahun = formatDateToYearMonth(parsedDate);

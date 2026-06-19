@@ -78,7 +78,7 @@ function getContentByMonth(yearMonth) {
       if (bulanTahun === yearMonth) {
         contents.push({
           id: String(row[MC_COL.ID] || ''),
-          date: row[MC_COL.DATE] instanceof Date ? row[MC_COL.DATE].toISOString() : String(row[MC_COL.DATE] || ''),
+          date: row[MC_COL.DATE] instanceof Date ? Utilities.formatDate(row[MC_COL.DATE], Session.getScriptTimeZone(), "yyyy-MM-dd") : String(row[MC_COL.DATE] || ''),
           bulanTahun: String(bulanTahun || ''),
           pic: String(row[MC_COL.PIC] || ''),
           title: String(row[MC_COL.TITLE] || ''),
@@ -206,9 +206,8 @@ function addMultipleContents(formDataArray, userName) {
       throw new Error('Data konten kosong atau tidak valid.');
     }
 
-    const sheet = getSheet('Master_Content');
-    const lastRow = sheet.getLastRow();
-    let nextNumber = lastRow > 0 ? lastRow : 1;
+    const lastNum = getLastContentNumber();
+    let nextNumber = lastNum + 1;
     const year = new Date().getFullYear();
 
     const newRows = [];
@@ -657,7 +656,7 @@ function getAllContent() {
 
       contents.push({
         id: row[MC_COL.ID],
-        date: row[MC_COL.DATE] instanceof Date ? row[MC_COL.DATE].toISOString() : row[MC_COL.DATE],
+        date: row[MC_COL.DATE] instanceof Date ? Utilities.formatDate(row[MC_COL.DATE], Session.getScriptTimeZone(), "yyyy-MM-dd") : row[MC_COL.DATE],
         bulanTahun: normalizeYearMonth(row[MC_COL.BULAN_TAHUN]),
         pic: row[MC_COL.PIC],
         title: row[MC_COL.TITLE],
@@ -701,7 +700,7 @@ function getDebugInfo(yearMonth) {
       }
       return {
         id: row[MC_COL.ID],
-        date: row[MC_COL.DATE] instanceof Date ? row[MC_COL.DATE].toISOString() : String(row[MC_COL.DATE]),
+        date: row[MC_COL.DATE] instanceof Date ? Utilities.formatDate(row[MC_COL.DATE], Session.getScriptTimeZone(), "yyyy-MM-dd") : String(row[MC_COL.DATE]),
         bulanTahun: String(row[MC_COL.BULAN_TAHUN]),
         normalizedBulanTahun: bT,
         title: row[MC_COL.TITLE]

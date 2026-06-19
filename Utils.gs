@@ -43,12 +43,35 @@ function getSheet(sheetName) {
  * YYYY = tahun berjalan, NNN = nomor urut zero-padded berdasarkan jumlah baris di Master_Content.
  * @returns {string} ID konten yang di-generate (contoh: CNT-2026-001)
  */
-function generateContentId() {
+function getLastContentNumber() {
   const sheet = getSheet('Master_Content');
   const lastRow = sheet.getLastRow();
-  // Baris pertama adalah header, jadi jumlah data = lastRow - 1
-  const nextNumber = lastRow > 0 ? lastRow : 1;
+  let maxNum = 0;
+  if (lastRow > 1) {
+    const data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < data.length; i++) {
+      const id = String(data[i][0]).trim();
+      const match = id.match(/CNT-\d{4}-(\d+)/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) {
+          maxNum = num;
+        }
+      }
+    }
+  }
+  return maxNum;
+}
+
+/**
+ * Auto-generate ID konten dengan format CNT-YYYY-NNN.
+ * YYYY = tahun berjalan, NNN = nomor urut zero-padded berdasarkan ID tertinggi.
+ * @returns {string} ID konten yang di-generate (contoh: CNT-2026-001)
+ */
+function generateContentId() {
+  const lastNum = getLastContentNumber();
   const year = new Date().getFullYear();
+  const nextNumber = lastNum + 1;
   const paddedNumber = String(nextNumber).padStart(3, '0');
   return `CNT-${year}-${paddedNumber}`;
 }

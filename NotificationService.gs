@@ -504,7 +504,14 @@ function testSystemIntegrations() {
 function saveNotificationSettings(token, target, userName) {
   try {
     const scriptProps = PropertiesService.getScriptProperties();
-    scriptProps.setProperty('WHATSAPP_API_TOKEN', token || '');
+    const oldToken = scriptProps.getProperty('WHATSAPP_API_TOKEN') || '';
+    
+    let tokenToSave = token || '';
+    if (tokenToSave.includes('...') || tokenToSave.includes('***')) {
+      tokenToSave = oldToken;
+    }
+    
+    scriptProps.setProperty('WHATSAPP_API_TOKEN', tokenToSave);
     scriptProps.setProperty('WHATSAPP_TARGET', target || '');
 
     // Catat log
@@ -547,8 +554,8 @@ function getNotificationSettings() {
     const triggerActive = getNotificationTriggerStatus();
 
     return {
-      token: token,
       maskedToken: maskedToken,
+      hasToken: token ? true : false,
       target: target,
       calendarName: calendarName,
       calendarUrl: calendarUrl,
