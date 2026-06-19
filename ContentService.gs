@@ -206,6 +206,8 @@ function addMultipleContents(formDataArray, userName) {
       throw new Error('Data konten kosong atau tidak valid.');
     }
 
+    const sheet = getSheet('Master_Content');
+    const lastRow = sheet.getLastRow();
     const lastNum = getLastContentNumber();
     let nextNumber = lastNum + 1;
     const year = new Date().getFullYear();

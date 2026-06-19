@@ -1887,8 +1887,8 @@ function renderTeam() {
     const roleClass = getRoleClass(member.role);
     return `<div class="team-card">
       <div class="team-card-actions">
-        <button class="btn btn-icon" onclick="openTeamForm('${escapeHtml(member.email)}')" title="Edit">✏️</button>
-        <button class="btn btn-icon" onclick="handleDeleteMember('${escapeHtml(member.email)}')" title="Hapus">🗑️</button>
+        <button class="btn btn-icon" onclick="openTeamForm('${escapeHtml(member.name)}')" title="Edit">✏️</button>
+        <button class="btn btn-icon" onclick="handleDeleteMember('${escapeHtml(member.name)}')" title="Hapus">🗑️</button>
       </div>
       <div class="team-avatar ${roleClass}">${getInitials(member.name)}</div>
       <div class="team-card-name">${escapeHtml(member.name)}</div>
@@ -1906,17 +1906,17 @@ function filterTeamByRole(role) {
   renderTeam();
 }
 
-function openTeamForm(email) {
+function openTeamForm(name) {
   if (!checkProfileSelected()) return;
   const modal = document.getElementById('team-form-modal');
   const title = document.getElementById('team-form-title');
   const form = document.getElementById('team-form');
 
-  if (email) {
-    const member = App.teamData.find(m => m.email === email);
+  if (name) {
+    const member = App.teamData.find(m => m.name === name);
     if (!member) { showToast('Anggota tidak ditemukan', 'error'); return; }
     title.textContent = 'Edit Anggota';
-    document.getElementById('team-edit-email').value = email;
+    document.getElementById('team-edit-email').value = name;
     document.getElementById('team-name').value = member.name;
     document.getElementById('team-role').value = member.role;
     document.getElementById('team-email').value = member.email || '';
@@ -1942,16 +1942,16 @@ function handleTeamSubmit(e) {
     role: document.getElementById('team-role').value,
     email: document.getElementById('team-email').value
   };
-  const oldEmail = document.getElementById('team-edit-email').value;
+  const oldName = document.getElementById('team-edit-email').value;
 
-  if (!data.name || !data.role || !data.email) {
-    showToast('Harap isi semua field', 'error');
+  if (!data.name || !data.role) {
+    showToast('Harap isi semua field wajib (Nama & Role)', 'error');
     return;
   }
 
   showLoading();
 
-  if (oldEmail) {
+  if (oldName) {
     google.script.run
       .withSuccessHandler(function() {
         hideLoading();
@@ -1964,7 +1964,7 @@ function handleTeamSubmit(e) {
         hideLoading();
         showToast('Gagal memperbarui: ' + err, 'error');
       })
-      .updateTeamMember(oldEmail, data, App.currentUserProfile);
+      .updateTeamMember(oldName, data, App.currentUserProfile);
   } else {
     google.script.run
       .withSuccessHandler(function() {
@@ -1982,7 +1982,7 @@ function handleTeamSubmit(e) {
   }
 }
 
-function handleDeleteMember(email) {
+function handleDeleteMember(name) {
   if (!checkProfileSelected()) return;
   if (!confirm('Hapus anggota ini dari tim?')) return;
 
@@ -1998,7 +1998,7 @@ function handleDeleteMember(email) {
       hideLoading();
       showToast('Gagal menghapus: ' + err, 'error');
     })
-    .deleteTeamMember(email, App.currentUserProfile);
+    .deleteTeamMember(name, App.currentUserProfile);
 }
 
 // ========================

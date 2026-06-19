@@ -97,22 +97,22 @@ function addTeamMember(data, userName) {
  * @param {Object} data - Data baru: {name, role, email}
  * @returns {string} JSON string status update
  */
-function updateTeamMember(oldEmail, data, userName) {
+function updateTeamMember(oldName, data, userName) {
   try {
     const sheet = getSheet('Team_Members');
     const sheetData = sheet.getDataRange().getValues();
 
-    // Cari baris berdasarkan email
+    // Cari baris berdasarkan nama
     let rowIndex = -1;
     for (let i = 1; i < sheetData.length; i++) {
-      if (sheetData[i][TM_COL.EMAIL] === oldEmail) {
+      if (sheetData[i][TM_COL.NAMA] === oldName) {
         rowIndex = i + 1; // +1 karena sheet 1-indexed
         break;
       }
     }
 
     if (rowIndex === -1) {
-      throw new Error(`Anggota dengan email "${oldEmail}" tidak ditemukan.`);
+      throw new Error(`Anggota dengan nama "${oldName}" tidak ditemukan.`);
     }
 
     // Update baris
@@ -128,7 +128,7 @@ function updateTeamMember(oldEmail, data, userName) {
     // Catat Log Aktivitas
     logActivity('Edit Anggota Tim', `Mengubah data anggota tim: "${updatedRow[0]}" (Role: ${updatedRow[1]}, Email: ${updatedRow[2]})`, userName);
 
-    Logger.log(`Anggota tim diupdate: ${oldEmail} -> ${data.name}`);
+    Logger.log(`Anggota tim diupdate: ${oldName} -> ${data.name}`);
     return true;
 
   } catch (error) {
@@ -143,34 +143,34 @@ function updateTeamMember(oldEmail, data, userName) {
  * @param {string} email - Email anggota yang akan dihapus
  * @returns {string} JSON string status penghapusan
  */
-function deleteTeamMember(email, userName) {
+function deleteTeamMember(name, userName) {
   try {
     const sheet = getSheet('Team_Members');
     const data = sheet.getDataRange().getValues();
 
-    // Cari baris berdasarkan email
+    // Cari baris berdasarkan nama
     let rowIndex = -1;
     for (let i = 1; i < data.length; i++) {
-      if (data[i][TM_COL.EMAIL] === email) {
+      if (data[i][TM_COL.NAMA] === name) {
         rowIndex = i + 1;
         break;
       }
     }
 
     if (rowIndex === -1) {
-      throw new Error(`Anggota dengan email "${email}" tidak ditemukan.`);
+      throw new Error(`Anggota dengan nama "${name}" tidak ditemukan.`);
     }
 
-    const name = data[rowIndex - 1][TM_COL.NAMA] || '';
+    const memberName = data[rowIndex - 1][TM_COL.NAMA] || '';
 
     // Hapus baris
     sheet.deleteRow(rowIndex);
     SpreadsheetApp.flush();
 
     // Catat Log Aktivitas
-    logActivity('Hapus Anggota Tim', `Menghapus anggota tim: "${name}" (Email: ${email})`, userName);
+    logActivity('Hapus Anggota Tim', `Menghapus anggota tim: "${memberName}"`, userName);
 
-    Logger.log(`Anggota tim dihapus: ${email}`);
+    Logger.log(`Anggota tim dihapus: ${name}`);
     return true;
 
   } catch (error) {
