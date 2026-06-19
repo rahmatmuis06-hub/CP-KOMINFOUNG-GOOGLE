@@ -1,0 +1,3497 @@
+<script>
+/* ============================================
+   KOMINFO DASHBOARD — CLIENT-SIDE LOGIC
+   All frontend JavaScript for the Web App
+   ============================================ */
+
+// ========================
+// SECTION 1: APP STATE
+// ========================
+const App = {
+  currentView: 'dashboard',
+  previousView: 'dashboard',
+  currentMonth: new Date().getMonth() + 1,
+  currentYear: new Date().getFullYear(),
+  contentData: [],
+  teamData: [],
+  picList: [],
+  isLoading: false,
+  editingContentId: null,
+  calendarMonth: new Date().getMonth(),
+  calendarYear: new Date().getFullYear(),
+  onboardingStep: 0,
+  currentTeamFilter: 'all',
+  driveFolders: {},
+  currentDetailContentId: null
+};
+
+const MONTH_NAMES = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+  'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+// ========================
+// SECTION 2: INITIALIZATION
+// ========================
+document.addEventListener('DOMContentLoaded', initApp);
+
+function initApp() {
+  setupEventListeners();
+  syncFilters();
+
+  // Load profil aktif dari storage
+  App.currentUserProfile = localStorage.getItem('kominfo_user_profile') || 'Anonymous';
+
+  // Check setup status first
+  google.script.run
+    .withSuccessHandler(function(result) {
+      hideLoading();
+      if (result && result.isSetup) {
+        loadContent();
+        loadPICList();
+        loadTeam();
+        checkUserRole(); // Cek peran pengguna untuk Admin Area
+        
+        // Show onboarding on first visit
+        if (!localStorage.getItem('kominfo_onboarded')) {
+          openOnboarding();
+        }
+      } else {
+        showSetupPrompt();
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      // If getSetupStatus fails, might be first time — show setup
+      showSetupPrompt();
+    })
+    .getSetupStatus();
+}
+
+function showSetupPrompt() {
+  const main = document.getElementById('main-content');
+  main.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:center;height:80vh;">
+      <div class="glass-card" style="text-align:center;max-width:450px;padding:3rem;">
+        <div style="font-size:4rem;margin-bottom:1rem;">🚀</div>
+        <h2 style="margin-bottom:1rem;">Setup Dashboard</h2>
+        <p style="color:var(--text-secondary);margin-bottom:1.5rem;">
+          Dashboard belum dikonfigurasi. Klik tombol di bawah untuk membuat database baru dan memulai.
+        </p>
+        <button class="btn btn-primary" onclick="runSetup()" style="margin-bottom:0.8rem;width:100%;">
+          ⚙️ Setup Database Baru
+        </button>
+        <button class="btn btn-secondary" onclick="runMigration()" style="width:100%;">
+          📥 Migrasi Data Lama
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+// ========================
+// SECTION 3: NAVIGATION
+// ========================
+function navigateTo(viewName) {
+  // Save previous view if it's a main view
+  if (App.currentView && App.currentView !== 'content-detail' && App.currentView !== 'bulk-add') {
+    App.previousView = App.currentView;
+  }
+
+  // Hide all views
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  // Show target
+  const target = document.getElementById('view-' + viewName);
+  if (target) target.classList.add('active');
+
+  // Update sidebar
+  document.querySelectorAll('.nav-item[data-view]').forEach(item => {
+    item.classList.toggle('active', item.dataset.view === viewName);
+  });
+
+  App.currentView = viewName;
+
+  // Load data for the view
+  switch(viewName) {
+    case 'dashboard':
+      renderDashboard();
+      break;
+    case 'kanban':
+      renderKanban();
+      break;
+    case 'calendar':
+      renderCalendar();
+      break;
+    case 'statistics':
+      loadStats();
+      break;
+    case 'team':
+      renderTeam();
+      break;
+    case 'proker':
+      loadProkerData();
+      break;
+    case 'kepanitiaan':
+      loadKepanitiaanData();
+      break;
+    case 'admin':
+      renderAdminView();
+      break;
+    case 'bulk-add':
+      // View khusus tambah banyak
+      break;
+    case 'content-detail':
+      // Detail view is loaded dynamically
+      break;
+  }
+
+  // Close mobile sidebar
+  closeMobileSidebar();
+}
+
+function closeMobileSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  const overlay = document.querySelector('.sidebar-overlay');
+  if (overlay) overlay.classList.remove('open');
+}
+
+// ========================
+// SECTION 4: DATA LOADING
+// ========================
+function getYearMonth() {
+  return App.currentYear + '-' + String(App.currentMonth).padStart(2, '0');
+}
+
+function loadContent() {
+  showTableSkeleton();
+  google.script.run
+    .withSuccessHandler(function(data) {
+      App.contentData = data || [];
+      renderCurrentView();
+
+      // Jalankan diagnostik jika draf kosong
+      const debugBox = document.getElementById('debug-box');
+      if (App.contentData.length === 0) {
+        google.script.run
+          .withSuccessHandler(function(info) {
+            console.log("=== DIAGNOSTIK DATABASE KOSONG ===");
+            console.log(JSON.stringify(info, null, 2));
+            if (debugBox) {
+              debugBox.style.display = 'block';
+              debugBox.textContent = "=== DIAGNOSTIK DATABASE KOSONG ===\n" + JSON.stringify(info, null, 2);
+            }
+          })
+          .getDebugInfo(getYearMonth());
+      } else {
+        if (debugBox) debugBox.style.display = 'none';
+      }
+    })
+    .withFailureHandler(function(err) {
+      console.error('Error loading content:', err);
+      showToast('Gagal memuat data konten', 'error');
+      App.contentData = [];
+      renderCurrentView();
+    })
+    .getContentByMonth(getYearMonth());
+}
+
+function loadTeam() {
+  google.script.run
+    .withSuccessHandler(function(data) {
+      App.teamData = data || [];
+      if (App.currentView === 'team') renderTeam();
+      populateProfileSelector();
+    })
+    .withFailureHandler(function(err) {
+      console.error('Error loading team:', err);
+    })
+    .getTeamMembers();
+}
+
+function loadPICList() {
+  google.script.run
+    .withSuccessHandler(function(data) {
+      App.picList = data || [];
+      populatePICDropdown();
+    })
+    .withFailureHandler(function(err) {
+      console.error('Error loading PIC list:', err);
+    })
+    .getPICList();
+}
+
+function loadStats() {
+  google.script.run
+    .withSuccessHandler(function(stats) {
+      renderStatistics(stats);
+    })
+    .withFailureHandler(function(err) {
+      console.error('Error loading stats:', err);
+      showToast('Gagal memuat statistik', 'error');
+    })
+    .getContentStats(getYearMonth());
+
+  // Muat data Kepanitiaan untuk chart statistik bulanan
+  if (!App.kepanitiaanData || App.kepanitiaanData.length === 0) {
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result) {
+          App.kepanitiaanData = result.kepanitiaan || [];
+          App.kepanitiaanLeaderboard = result.leaderboard || [];
+          renderKepanitiaanStats();
+        }
+      })
+      .getKepanitiaanData();
+  } else {
+    renderKepanitiaanStats();
+  }
+}
+
+function renderKepanitiaanStats() {
+  const container = document.getElementById('kepanitiaan-monthly-stats-chart');
+  if (!container) return;
+  
+  const data = App.kepanitiaanData || [];
+  if (data.length === 0) {
+    container.innerHTML = '<div style="color: var(--text-secondary); font-size: 0.9rem; text-align: center; padding: 2rem 0;">Belum ada data kepanitiaan</div>';
+    return;
+  }
+  
+  const months = [
+    'FEBRUARI', 'MARET', 'APRIL', 'MEI', 'JUNI', 'JULI', 
+    'AGUSTUS', 'SEPTEMBER', 'OKTOBER', 'NOVEMBER', 'DESEMBER'
+  ];
+  
+  const statsData = months.map(mName => {
+    const monthData = data.find(m => m.month.toUpperCase() === mName);
+    return {
+      month: mName,
+      count: monthData ? monthData.events.length : 0
+    };
+  });
+  
+  const maxMonthCount = Math.max(...statsData.map(s => s.count), 1);
+  
+  container.innerHTML = statsData.map(s => {
+    const percent = ((s.count / maxMonthCount) * 100).toFixed(1);
+    const barColor = s.count > 0 ? 'linear-gradient(90deg, #10b981 0%, #059669 100%)' : 'rgba(255,255,255,0.02)';
+    return `
+      <div style="display: grid; grid-template-columns: 100px 1fr 50px; align-items: center; gap: var(--space-md); font-size: 0.85rem; margin-bottom: 8px;">
+        <div style="font-weight: 600; text-align: right; text-transform: capitalize; color: var(--text-secondary);">${escapeHtml(s.month.toLowerCase())}</div>
+        <div style="height: 10px; background: rgba(255,255,255,0.05); border-radius: 5px; overflow: hidden; border: 1px solid var(--border-glass);">
+          <div style="width: ${percent}%; height: 100%; background: ${barColor}; border-radius: 5px; transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);"></div>
+        </div>
+        <div style="font-weight: 700; color: ${s.count > 0 ? '#10b981' : 'var(--text-muted)'};">${s.count} keg.</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function loadProkerData() {
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(data) {
+      hideLoading();
+      App.prokerData = data || [];
+      renderProker();
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Gagal memuat data proker: ' + err.message, 'error');
+      console.error('Error loading proker:', err);
+    })
+    .getProkerData();
+}
+
+function renderProker() {
+  const tbody = document.getElementById('proker-table-body');
+  const emptyState = document.getElementById('proker-empty-state');
+  if (!tbody) return;
+
+  let filtered = App.prokerData || [];
+  const searchInput = document.getElementById('proker-search-input');
+  const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
+  
+  if (query) {
+    filtered = filtered.filter(p => 
+      p.name.toLowerCase().includes(query) || 
+      p.execution.toLowerCase().includes(query)
+    );
+  }
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '';
+    if (emptyState) emptyState.style.display = 'block';
+    return;
+  }
+
+  if (emptyState) emptyState.style.display = 'none';
+
+  tbody.innerHTML = filtered.map(p => {
+    const monthsHtml = p.activeMonths && p.activeMonths.length > 0
+      ? p.activeMonths.map(m => `<span class="badge badge-platform" style="background: rgba(139, 92, 246, 0.12); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.2); margin-right: 4px; margin-bottom: 4px; display: inline-block;">${m}</span>`).join('')
+      : '<span style="color: var(--text-secondary); font-size: 0.8rem;">Tidak teratur / Belum ada agenda</span>';
+
+    return `<tr>
+      <td style="text-align: center; font-weight: 600; color: var(--text-secondary);">${escapeHtml(p.no || '-')}</td>
+      <td style="font-weight: 500;">${escapeHtml(p.name)}</td>
+      <td><span class="badge badge-draft" style="background: rgba(255,255,255,0.05); color: var(--text-primary); border: 1px solid var(--border-glass);">${escapeHtml(p.execution)}</span></td>
+      <td>${monthsHtml}</td>
+      <td style="text-align: center;">
+        <button class="btn btn-icon" onclick="openProkerForm(${p.rowIdx})" title="Edit Proker" style="padding: 4px 8px; font-size: 0.85rem;">✏️</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function filterProkerList() {
+  renderProker();
+}
+
+function loadKepanitiaanData() {
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(result) {
+      hideLoading();
+      if (result) {
+        App.kepanitiaanData = result.kepanitiaan || [];
+        App.kepanitiaanLeaderboard = result.leaderboard || [];
+        renderKepanitiaan();
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Gagal memuat data kepanitiaan: ' + err.message, 'error');
+      console.error('Error loading kepanitiaan:', err);
+    })
+    .getKepanitiaanData();
+}
+
+function renderKepanitiaan() {
+  const chartContainer = document.getElementById('kepanitiaan-leaderboard-chart');
+  const gridContainer = document.getElementById('kepanitiaan-month-grid');
+  const emptyState = document.getElementById('kepanitiaan-empty-state');
+  
+  if (!chartContainer || !gridContainer) return;
+
+  const data = App.kepanitiaanData || [];
+  const leaderboard = App.kepanitiaanLeaderboard || [];
+
+  if (data.length === 0) {
+    chartContainer.innerHTML = '<div style="color: var(--text-secondary); font-size: 0.9rem; text-align: center; padding: 2rem 0;">Belum ada data kepanitiaan</div>';
+    gridContainer.innerHTML = '';
+    if (emptyState) emptyState.style.display = 'block';
+    return;
+  }
+
+  if (emptyState) emptyState.style.display = 'none';
+
+  // 1. Render Leaderboard Chart
+  const maxCount = leaderboard.length > 0 ? Math.max(...leaderboard.map(l => l.count), 1) : 1;
+  chartContainer.innerHTML = leaderboard.map(l => {
+    const percent = ((l.count / maxCount) * 100).toFixed(1);
+    return `
+      <div style="display: grid; grid-template-columns: 120px 1fr 50px; align-items: center; gap: var(--space-md); font-size: 0.85rem;">
+        <div style="font-weight: 600; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(l.name)}</div>
+        <div style="height: 10px; background: rgba(255,255,255,0.05); border-radius: 5px; overflow: hidden; border: 1px solid var(--border-glass);">
+          <div style="width: ${percent}%; height: 100%; background: linear-gradient(90deg, var(--secondary) 0%, var(--primary) 100%); border-radius: 5px; transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);"></div>
+        </div>
+        <div style="font-weight: 700; color: var(--secondary);">${l.count} keg.</div>
+      </div>
+    `;
+  }).join('');
+
+
+  // 2. Render Month Grid Cards
+  gridContainer.innerHTML = data.map(m => {
+    const eventsHtml = m.events.map((e, eventIdx) => {
+      const membersHtml = e.members && e.members.length > 0
+        ? e.members.map(member => `<span class="badge" style="background: rgba(59, 130, 246, 0.12); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.2); font-size: 0.72rem; padding: 2px 8px; border-radius: 20px; display: inline-block; margin-right: 4px; margin-bottom: 4px;">👤 ${escapeHtml(member)}</span>`).join('')
+        : '<span style="color: var(--text-secondary); font-size: 0.75rem;">Belum ada panitia terdaftar</span>';
+
+      return `
+        <div style="background: rgba(0,0,0,0.15); border: 1px solid var(--border-glass); padding: var(--space-md); border-radius: var(--radius-md); margin-bottom: var(--space-sm);">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px;">
+            <div style="font-weight: 700; font-size: 0.88rem; color: var(--text-primary);">📢 ${escapeHtml(e.title)}</div>
+            <div style="display: flex; gap: 4px; flex-shrink: 0;">
+              <button class="btn btn-icon" onclick="openKepanitiaanForm('${escapeHtml(m.month)}', ${eventIdx})" title="Edit Kegiatan" style="padding: 2px 4px; font-size: 0.72rem; height: auto; margin:0; width:auto; border:none; background:transparent; cursor:pointer;">✏️</button>
+              <button class="btn btn-icon" onclick="handleDeleteKepanitiaanEvent('${escapeHtml(m.month)}', ${eventIdx})" title="Hapus Kegiatan" style="padding: 2px 4px; font-size: 0.72rem; height: auto; margin:0; width:auto; border:none; background:transparent; cursor:pointer; color: var(--status-urgent);">🗑️</button>
+            </div>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; margin-top: 4px;">
+            ${membersHtml}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="glass-card" style="padding: var(--space-lg); border-top: 4px solid var(--secondary); display: flex; flex-direction: column; justify-content: flex-start; height: 100%;">
+        <h3 style="margin-bottom: var(--space-md); font-size: 1.05rem; letter-spacing: 0.05em; color: var(--secondary); display: flex; align-items: center; justify-content: space-between;">
+          <span>📅 ${m.month}</span>
+          <span style="font-size: 0.75rem; background: rgba(139, 92, 246, 0.15); color: #a78bfa; padding: 2px 8px; border-radius: 12px; font-weight: normal;">${m.events.length} Kegiatan</span>
+        </h3>
+        <div style="display: flex; flex-direction: column; gap: var(--space-xs); flex-grow: 1;">
+          ${eventsHtml}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderCurrentView() {
+  switch(App.currentView) {
+    case 'dashboard': renderDashboard(); break;
+    case 'kanban': renderKanban(); break;
+    case 'calendar': renderCalendar(); break;
+    case 'statistics': loadStats(); break;
+    case 'team': renderTeam(); break;
+    case 'admin': renderAdminView(); break;
+    case 'content-detail': openContentDetail(App.currentDetailContentId); break;
+  }
+}
+
+// ========================
+// SECTION 5: DASHBOARD
+// ========================
+function renderDashboard() {
+  // Reset checkbox & tombol aksi massal setiap kali dashboard di-render ulang
+  const masterCheck = document.getElementById('check-all');
+  if (masterCheck) {
+    masterCheck.checked = false;
+    masterCheck.indeterminate = false;
+  }
+  const btnDeleteSelected = document.getElementById('btn-delete-selected');
+  if (btnDeleteSelected) btnDeleteSelected.style.display = 'none';
+  const btnDownloadSelected = document.getElementById('btn-download-selected');
+  if (btnDownloadSelected) btnDownloadSelected.style.display = 'none';
+
+  const data = App.contentData;
+  const total = data.length;
+  const draft = data.filter(d => d.status === 'Draft').length;
+  const inProgress = data.filter(d => d.status === 'In Progress').length;
+  const review = data.filter(d => d.status === 'Review').length;
+  const completed = data.filter(d => d.status === 'Completed').length;
+
+  animateCounter(document.getElementById('stat-total'), total);
+  animateCounter(document.getElementById('stat-inprogress'), inProgress);
+  animateCounter(document.getElementById('stat-review'), review);
+  animateCounter(document.getElementById('stat-completed'), completed);
+
+  const tbody = document.getElementById('content-table-body');
+  const emptyState = document.getElementById('empty-state');
+
+  if (!data.length) {
+    tbody.innerHTML = '';
+    if (emptyState) emptyState.style.display = 'block';
+    return;
+  }
+
+  if (emptyState) emptyState.style.display = 'none';
+  tbody.innerHTML = data.map((item, i) => renderTableRow(item, i)).join('');
+}
+
+function renderTableRow(item, index) {
+  const urgentClass = isUrgent(item.date, item.status) ? 'urgent' : '';
+  const urgentDot = isUrgent(item.date, item.status) ? '<span class="urgent-dot"></span>' : '';
+  const statusClass = getStatusClass(item.status);
+  const dateFormatted = formatDate(item.date);
+
+  return `<tr class="${urgentClass}" onclick="openContentDetail('${item.id}')" style="cursor:pointer;">
+    <td style="text-align: center;" onclick="event.stopPropagation();">
+      <input type="checkbox" class="content-checkbox" value="${item.id}" onclick="handleCheckboxChange()">
+    </td>
+    <td>${index + 1}</td>
+    <td>${urgentDot}${dateFormatted}</td>
+    <td style="font-weight:600;">${escapeHtml(item.title)}</td>
+    <td>${escapeHtml(item.pic)}</td>
+    <td><span class="badge badge-platform">${escapeHtml(item.platform || '-')}</span></td>
+    <td>${escapeHtml(item.ratio || '-')}</td>
+    <td><span class="badge ${statusClass}">${escapeHtml(item.status)}</span></td>
+    <td class="actions-cell" onclick="event.stopPropagation();">
+      <button class="btn btn-icon" onclick="openContentForm('${item.id}')" title="Edit">✏️</button>
+      <button class="btn btn-icon" onclick="handleDeleteContent('${item.id}')" title="Hapus">🗑️</button>
+    </td>
+  </tr>`;
+}
+
+function showTableSkeleton() {
+  const tbody = document.getElementById('content-table-body');
+  if (!tbody) return;
+  tbody.innerHTML = Array.from({length: 5}, () =>
+    `<tr><td colspan="9"><div class="skeleton skeleton-row"></div></td></tr>`
+  ).join('');
+}
+
+// ========================
+// SECTION 6: KANBAN BOARD
+// ========================
+function renderKanban() {
+  const statuses = ['Draft', 'In Progress', 'Review', 'Completed'];
+  const statusMap = {
+    'Draft': 'draft',
+    'In Progress': 'inprogress',
+    'Review': 'review',
+    'Completed': 'completed'
+  };
+
+  statuses.forEach(status => {
+    const key = statusMap[status];
+    const cards = App.contentData.filter(d => d.status === status);
+    const container = document.getElementById('kanban-' + key);
+    const countBadge = document.getElementById('count-' + key);
+
+    if (countBadge) countBadge.textContent = cards.length;
+    if (!container) return;
+
+    container.innerHTML = cards.map(item => renderKanbanCard(item)).join('');
+
+    // Set up drag listeners on cards
+    container.querySelectorAll('.kanban-card').forEach(card => {
+      card.addEventListener('dragstart', handleDragStart);
+      card.addEventListener('dragend', handleDragEnd);
+    });
+  });
+
+  // Set up drop zones
+  document.querySelectorAll('.kanban-column').forEach(col => {
+    col.addEventListener('dragover', handleDragOver);
+    col.addEventListener('dragleave', handleDragLeave);
+    col.addEventListener('drop', handleDrop);
+  });
+}
+
+function renderKanbanCard(item) {
+  const urgentClass = isUrgent(item.date, item.status) ? 'urgent' : '';
+  return `<div class="kanban-card ${urgentClass}" draggable="true" data-id="${item.id}" data-status="${item.status}" onclick="openContentDetail('${item.id}')">
+    <div class="kanban-card-title">${escapeHtml(item.title)}</div>
+    <div class="kanban-card-meta">
+      <span class="kanban-card-date">📅 ${formatDate(item.date)}</span>
+      <span class="kanban-card-pic">👤 ${escapeHtml(item.pic)}</span>
+    </div>
+    <div style="margin-top:6px;">
+      <span class="badge badge-platform" style="font-size:0.68rem;">${escapeHtml(item.platform || '')}</span>
+    </div>
+  </div>`;
+}
+
+// Drag & Drop
+function handleDragStart(e) {
+  if (!checkProfileSelected()) {
+    e.preventDefault();
+    return;
+  }
+  e.dataTransfer.setData('text/plain', e.target.dataset.id);
+  e.target.classList.add('dragging');
+}
+function handleDragEnd(e) {
+  e.target.classList.remove('dragging');
+}
+function handleDragOver(e) {
+  e.preventDefault();
+  const col = e.target.closest('.kanban-column');
+  if (col) col.classList.add('drag-over');
+}
+function handleDragLeave(e) {
+  const col = e.target.closest('.kanban-column');
+  if (col) col.classList.remove('drag-over');
+}
+function handleDrop(e) {
+  e.preventDefault();
+  const col = e.target.closest('.kanban-column');
+  if (!col) return;
+  col.classList.remove('drag-over');
+
+  const contentId = e.dataTransfer.getData('text/plain');
+  const newStatus = col.dataset.status;
+
+  // Optimistic UI update
+  const item = App.contentData.find(d => d.id === contentId);
+  if (item && item.status !== newStatus) {
+    const oldStatus = item.status;
+    item.status = newStatus;
+    renderKanban();
+
+    google.script.run
+      .withSuccessHandler(function() {
+        showToast('Status diperbarui ke ' + newStatus, 'success');
+      })
+      .withFailureHandler(function(err) {
+        item.status = oldStatus;
+        renderKanban();
+        showToast('Gagal memperbarui status', 'error');
+      })
+      .updateContentStatus(contentId, newStatus, App.currentUserProfile);
+  }
+}
+
+// ========================
+// SECTION 7: CALENDAR
+// ========================
+function renderCalendar() {
+  const year = App.calendarYear;
+  const month = App.calendarMonth; // 0-indexed
+
+  // Update label
+  const label = document.getElementById('calendar-month-label');
+  if (label) label.textContent = MONTH_NAMES[month] + ' ' + year;
+
+  const grid = document.getElementById('calendar-grid');
+  if (!grid) return;
+
+  // Keep day headers, remove day cells
+  const headers = grid.querySelectorAll('.calendar-day-header');
+  grid.innerHTML = '';
+  headers.forEach(h => grid.appendChild(h));
+
+  const firstDay = new Date(year, month, 1).getDay(); // 0=Sunday
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const today = new Date();
+
+  // Filter content for this calendar month
+  const calYearMonth = year + '-' + String(month + 1).padStart(2, '0');
+  const monthContent = App.contentData.filter(d => {
+    if (d.bulanTahun === calYearMonth) return true;
+    // Fallback: parse date
+    try {
+      const dt = new Date(d.date);
+      return dt.getFullYear() === year && dt.getMonth() === month;
+    } catch(e) { return false; }
+  });
+
+  // Empty cells before first day
+  for (let i = 0; i < firstDay; i++) {
+    const empty = document.createElement('div');
+    empty.className = 'calendar-day other-month';
+    grid.appendChild(empty);
+  }
+
+  // Day cells
+  for (let day = 1; day <= daysInMonth; day++) {
+    const cell = document.createElement('div');
+    cell.className = 'calendar-day';
+
+    const isToday = today.getDate() === day && today.getMonth() === month && today.getFullYear() === year;
+    if (isToday) cell.classList.add('today');
+
+    cell.innerHTML = `<div class="calendar-day-number">${day}</div>`;
+
+    // Find content for this day
+    const dayContent = monthContent.filter(d => {
+      try {
+        const dt = new Date(d.date);
+        return dt.getDate() === day;
+      } catch(e) { return false; }
+    });
+
+    dayContent.forEach(item => {
+      const statusClass = 'status-' + item.status.toLowerCase().replace(/\s+/g, '');
+      const event = document.createElement('div');
+      event.className = 'calendar-event ' + statusClass;
+      event.textContent = item.title;
+      event.title = item.title + ' (' + item.status + ')';
+      event.onclick = function(e) {
+        e.stopPropagation();
+        openContentDetail(item.id);
+      };
+      cell.appendChild(event);
+    });
+
+    grid.appendChild(cell);
+  }
+}
+
+function prevMonth() {
+  App.calendarMonth--;
+  if (App.calendarMonth < 0) {
+    App.calendarMonth = 11;
+    App.calendarYear--;
+  }
+  // Load content for new month if different from current filter
+  const calYM = App.calendarYear + '-' + String(App.calendarMonth + 1).padStart(2, '0');
+  if (calYM !== getYearMonth()) {
+    App.currentMonth = App.calendarMonth + 1;
+    App.currentYear = App.calendarYear;
+    syncFilters();
+    loadContent();
+  } else {
+    renderCalendar();
+  }
+}
+
+function nextMonth() {
+  App.calendarMonth++;
+  if (App.calendarMonth > 11) {
+    App.calendarMonth = 0;
+    App.calendarYear++;
+  }
+  const calYM = App.calendarYear + '-' + String(App.calendarMonth + 1).padStart(2, '0');
+  if (calYM !== getYearMonth()) {
+    App.currentMonth = App.calendarMonth + 1;
+    App.currentYear = App.calendarYear;
+    syncFilters();
+    loadContent();
+  } else {
+    renderCalendar();
+  }
+}
+
+// ========================
+// SECTION 8: STATISTICS
+// ========================
+function renderStatistics(stats) {
+  if (!stats) return;
+
+  // Overview cards
+  const totalEl = document.getElementById('stats-total');
+  const avgEl = document.getElementById('stats-average');
+  const compEl = document.getElementById('stats-completion');
+
+  if (totalEl) animateCounter(totalEl, stats.total || 0);
+  
+  const teamCount = App.teamData.length || 1;
+  const avg = stats.total ? Math.round(stats.total / teamCount * 10) / 10 : 0;
+  if (avgEl) avgEl.textContent = avg;
+
+  const compRate = stats.total ? Math.round((stats.completed / stats.total) * 100) : 0;
+  if (compEl) compEl.textContent = compRate + '%';
+
+  // Completion Ring
+  const ringCircle = document.getElementById('completion-ring-circle');
+  const ringPercentage = document.getElementById('completion-percentage');
+  if (ringCircle) {
+    const circumference = 2 * Math.PI * 80; // r=80
+    const dashArray = (compRate / 100) * circumference;
+    ringCircle.setAttribute('stroke-dasharray', dashArray + ' ' + circumference);
+  }
+  if (ringPercentage) ringPercentage.textContent = compRate + '%';
+
+  // Workload Chart
+  renderWorkloadChart(stats.perPic || []);
+
+  // Leaderboard
+  renderLeaderboard(stats.perPic || []);
+}
+
+function renderWorkloadChart(perPic) {
+  const container = document.getElementById('workload-chart');
+  if (!container) return;
+
+  if (!perPic.length) {
+    container.innerHTML = '<div class="empty-state"><p>Belum ada data</p></div>';
+    return;
+  }
+
+  const maxTotal = Math.max(...perPic.map(p => p.total), 1);
+
+  container.innerHTML = perPic.map(pic => {
+    const draftW = (pic.draft / maxTotal * 100).toFixed(1);
+    const ipW = (pic.inProgress / maxTotal * 100).toFixed(1);
+    const revW = (pic.review / maxTotal * 100).toFixed(1);
+    const compW = (pic.completed / maxTotal * 100).toFixed(1);
+
+    return `<div class="bar-item">
+      <span class="bar-label">${escapeHtml(pic.name)}</span>
+      <div class="bar-track">
+        ${pic.draft ? `<div class="bar-segment draft" style="width:${draftW}%" title="Draft: ${pic.draft}"></div>` : ''}
+        ${pic.inProgress ? `<div class="bar-segment inprogress" style="width:${ipW}%" title="In Progress: ${pic.inProgress}"></div>` : ''}
+        ${pic.review ? `<div class="bar-segment review" style="width:${revW}%" title="Review: ${pic.review}"></div>` : ''}
+        ${pic.completed ? `<div class="bar-segment completed" style="width:${compW}%" title="Completed: ${pic.completed}"></div>` : ''}
+      </div>
+      <span class="bar-count">${pic.total}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderLeaderboard(perPic) {
+  const container = document.getElementById('leaderboard-list');
+  if (!container) return;
+
+  const sorted = [...perPic].sort((a, b) => (b.completed || 0) - (a.completed || 0));
+
+  if (!sorted.length) {
+    container.innerHTML = '<div class="empty-state"><p>Belum ada data</p></div>';
+    return;
+  }
+
+  container.innerHTML = sorted.map((pic, i) => {
+    const rankClass = i === 0 ? 'top-1' : i === 1 ? 'top-2' : i === 2 ? 'top-3' : '';
+    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1);
+    return `<div class="leaderboard-item">
+      <div class="leaderboard-rank ${rankClass}">${medal}</div>
+      <div class="team-avatar" style="width:32px;height:32px;font-size:0.8rem;${getAvatarStyle(pic.name)}">${getInitials(pic.name)}</div>
+      <span class="leaderboard-name">${escapeHtml(pic.name)}</span>
+      <span class="leaderboard-count">${pic.completed || 0} ✅</span>
+    </div>`;
+  }).join('');
+}
+
+// ========================
+// SECTION 9: CONTENT FORM
+// ========================
+function openContentForm(id) {
+  if (!checkProfileSelected()) return;
+  const modal = document.getElementById('content-form-modal');
+  const title = document.getElementById('form-modal-title');
+  const form = document.getElementById('content-form');
+
+  populatePICDropdown();
+
+  if (id) {
+    // Edit mode
+    const item = App.contentData.find(d => d.id === id);
+    if (!item) { showToast('Konten tidak ditemukan', 'error'); return; }
+
+    App.editingContentId = id;
+    title.textContent = 'Edit Konten';
+    document.getElementById('form-content-id').value = id;
+    document.getElementById('form-date').value = formatDateForInput(item.date);
+    document.getElementById('form-title').value = item.title;
+    document.getElementById('form-pic').value = item.pic;
+    document.getElementById('form-platform').value = item.platform || '';
+    document.getElementById('form-template').value = item.template || '';
+    document.getElementById('form-ratio').value = item.ratio || '';
+    document.getElementById('form-status').value = item.status || 'Draft';
+    document.getElementById('form-format').value = item.format || 'desain';
+    document.getElementById('form-description').value = item.description || '';
+  } else {
+    // Add mode
+    App.editingContentId = null;
+    title.textContent = 'Tambah Konten Baru';
+    form.reset();
+    document.getElementById('form-content-id').value = '';
+    document.getElementById('form-status').value = 'Draft';
+    document.getElementById('form-format').value = '';
+    document.getElementById('form-description').value = '';
+  }
+
+  modal.style.display = 'flex';
+}
+
+function closeContentForm() {
+  document.getElementById('content-form-modal').style.display = 'none';
+  App.editingContentId = null;
+}
+
+function handleContentSubmit(e) {
+  e.preventDefault();
+  if (!checkProfileSelected()) return;
+
+  const formData = {
+    date: document.getElementById('form-date').value,
+    title: document.getElementById('form-title').value,
+    pic: document.getElementById('form-pic').value,
+    platform: document.getElementById('form-platform').value,
+    template: document.getElementById('form-template').value,
+    ratio: document.getElementById('form-ratio').value,
+    status: document.getElementById('form-status').value,
+    format: document.getElementById('form-format').value,
+    description: document.getElementById('form-description').value
+  };
+
+  if (!formData.date || !formData.title || !formData.pic || !formData.format) {
+    showToast('Harap isi semua field yang wajib', 'error');
+    return;
+  }
+
+  showLoading();
+  const id = App.editingContentId;
+
+  if (id) {
+    google.script.run
+      .withSuccessHandler(function() {
+        hideLoading();
+        showToast('Konten berhasil diperbarui!', 'success');
+        closeContentForm();
+        loadContent();
+      })
+      .withFailureHandler(function(err) {
+        hideLoading();
+        showToast('Gagal memperbarui konten: ' + err, 'error');
+      })
+      .updateContent(id, formData, App.currentUserProfile);
+  } else {
+    google.script.run
+      .withSuccessHandler(function(result) {
+        hideLoading();
+        showToast('Konten baru berhasil ditambahkan!', 'success');
+        closeContentForm();
+        loadContent();
+      })
+      .withFailureHandler(function(err) {
+        hideLoading();
+        showToast('Gagal menambahkan konten: ' + err, 'error');
+      })
+      .addContent(formData, App.currentUserProfile);
+  }
+}
+
+function handleDeleteContent(id) {
+  if (!checkProfileSelected()) return;
+  if (!confirm('Hapus konten ini? Tindakan ini tidak bisa dibatalkan.')) return;
+
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function() {
+      hideLoading();
+      showToast('Konten berhasil dihapus', 'success');
+      loadContent();
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Gagal menghapus konten: ' + err, 'error');
+    })
+    .deleteContent(id, App.currentUserProfile);
+}
+
+function toggleSelectAll(master) {
+  const checkboxes = document.querySelectorAll('.content-checkbox');
+  checkboxes.forEach(cb => cb.checked = master.checked);
+  handleCheckboxChange();
+}
+
+function handleCheckboxChange() {
+  const checkboxes = document.querySelectorAll('.content-checkbox');
+  const checkedBoxes = Array.from(checkboxes).filter(cb => cb.checked);
+  
+  const btnDeleteSelected = document.getElementById('btn-delete-selected');
+  const deleteCountEl = document.getElementById('delete-selected-count');
+  const btnDownloadSelected = document.getElementById('btn-download-selected');
+  const downloadCountEl = document.getElementById('download-selected-count');
+  const masterCheck = document.getElementById('check-all');
+  
+  if (btnDeleteSelected && deleteCountEl) {
+    if (checkedBoxes.length > 0) {
+      btnDeleteSelected.style.display = 'inline-flex';
+      deleteCountEl.textContent = checkedBoxes.length;
+    } else {
+      btnDeleteSelected.style.display = 'none';
+    }
+  }
+
+  // Hitung berkas lampiran yang siap didownload
+  if (btnDownloadSelected && downloadCountEl) {
+    let totalFiles = 0;
+    checkedBoxes.forEach(cb => {
+      const item = App.contentData.find(d => d.id === cb.value);
+      if (item && item.fileUrl) {
+        const urls = item.fileUrl.split('\n').map(u => u.trim()).filter(Boolean);
+        totalFiles += urls.length;
+      }
+    });
+
+    if (totalFiles > 0) {
+      btnDownloadSelected.style.display = 'inline-flex';
+      downloadCountEl.textContent = totalFiles;
+    } else {
+      btnDownloadSelected.style.display = 'none';
+    }
+  }
+
+  if (masterCheck && checkboxes.length > 0) {
+    masterCheck.checked = (checkedBoxes.length === checkboxes.length);
+    masterCheck.indeterminate = (checkedBoxes.length > 0 && checkedBoxes.length < checkboxes.length);
+  }
+}
+
+function deleteSelectedContents() {
+  if (!checkProfileSelected()) return;
+  const checkboxes = document.querySelectorAll('.content-checkbox');
+  const checkedBoxes = Array.from(checkboxes).filter(cb => cb.checked);
+  const selectedIds = checkedBoxes.map(cb => cb.value);
+
+  if (selectedIds.length === 0) return;
+
+  if (!confirm(`Hapus ${selectedIds.length} konten yang terpilih? Tindakan ini tidak bisa dibatalkan.`)) {
+    return;
+  }
+
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(result) {
+      hideLoading();
+      if (result && result.success) {
+        showToast(`${result.count} konten berhasil dihapus secara massal`, 'success');
+        
+        const btnDeleteSelected = document.getElementById('btn-delete-selected');
+        if (btnDeleteSelected) btnDeleteSelected.style.display = 'none';
+        
+        const masterCheck = document.getElementById('check-all');
+        if (masterCheck) {
+          masterCheck.checked = false;
+          masterCheck.indeterminate = false;
+        }
+
+        loadContent();
+      } else {
+        showToast('Gagal menghapus konten massal', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Gagal menghapus konten massal: ' + err, 'error');
+    })
+    .deleteMultipleContents(selectedIds, App.currentUserProfile);
+}
+
+function populatePICDropdown() {
+  const select = document.getElementById('form-pic');
+  if (!select) return;
+  const currentVal = select.value;
+  select.innerHTML = '<option value="">Pilih PIC...</option>';
+  App.picList.forEach(pic => {
+    const opt = document.createElement('option');
+    opt.value = pic.name;
+    opt.textContent = pic.name + ' (' + pic.role + ')';
+    select.appendChild(opt);
+  });
+  if (currentVal) select.value = currentVal;
+}
+
+// ========================
+// SECTION 9B: BULK CONTENT FORM
+// ========================
+function openBulkContentForm() {
+  if (!checkProfileSelected()) return;
+  const tbody = document.getElementById('bulk-table-body');
+  if (!tbody) return;
+
+  tbody.innerHTML = '';
+  // Add 3 default empty rows
+  for (let i = 0; i < 3; i++) {
+    addBulkRow();
+  }
+
+  navigateTo('bulk-add');
+}
+
+function closeBulkContentForm() {
+  navigateTo('dashboard');
+}
+
+function addBulkRow() {
+  const tbody = document.getElementById('bulk-table-body');
+  if (!tbody) return;
+
+  const tr = document.createElement('tr');
+  
+  // PIC options dynamic generation
+  let picOptionsHTML = '<option value="">Pilih PIC...</option>';
+  App.picList.forEach(pic => {
+    picOptionsHTML += `<option value="${escapeHtml(pic.name)}">${escapeHtml(pic.name)} (${escapeHtml(pic.role)})</option>`;
+  });
+
+  // Today's date in YYYY-MM-DD format as a default candidate
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  tr.innerHTML = `
+    <td>
+      <input type="date" class="bulk-input form-date" required value="${todayStr}">
+    </td>
+    <td>
+      <input type="text" class="bulk-input form-title" required placeholder="Contoh: Hari Kebangkitan Nasional">
+    </td>
+    <td>
+      <select class="bulk-input form-pic" required>
+        ${picOptionsHTML}
+      </select>
+    </td>
+    <td>
+      <select class="bulk-input form-platform" required>
+        <option value="">Platform...</option>
+        <option value="Flyer">Flyer</option>
+        <option value="Reels">Reels</option>
+        <option value="TikTok">TikTok</option>
+        <option value="Feeds">Feeds</option>
+        <option value="Story">Story</option>
+      </select>
+    </td>
+    <td>
+      <select class="bulk-input form-format" required>
+        <option value="">Jenis...</option>
+        <option value="desain">🎨 Desain</option>
+        <option value="video">🎬 Video</option>
+      </select>
+    </td>
+    <td>
+      <select class="bulk-input form-ratio" required>
+        <option value="">Rasio...</option>
+        <option value="16:9">16:9</option>
+        <option value="1:1">1:1</option>
+        <option value="4:5">4:5</option>
+        <option value="9:16">9:16</option>
+      </select>
+    </td>
+    <td>
+      <select class="bulk-input form-status" required>
+        <option value="Draft">Draft</option>
+        <option value="In Progress">In Progress</option>
+        <option value="Review">Review</option>
+        <option value="Completed">Completed</option>
+      </select>
+    </td>
+    <td style="text-align: center;">
+      <button type="button" class="btn-delete-row" onclick="removeBulkRow(this)" title="Hapus baris">🗑️</button>
+    </td>
+  `;
+
+  tbody.appendChild(tr);
+  updateBulkRowCounter();
+}
+
+function removeBulkRow(button) {
+  const tr = button.closest('tr');
+  if (tr) {
+    tr.remove();
+    updateBulkRowCounter();
+  }
+}
+
+function updateBulkRowCounter() {
+  const tbody = document.getElementById('bulk-table-body');
+  const counter = document.getElementById('bulk-row-counter');
+  if (tbody && counter) {
+    const rowCount = tbody.querySelectorAll('tr').length;
+    counter.textContent = `Total: ${rowCount} baris`;
+  }
+}
+
+function handleBulkContentSubmit(e) {
+  e.preventDefault();
+  if (!checkProfileSelected()) return;
+
+  const tbody = document.getElementById('bulk-table-body');
+  if (!tbody) return;
+
+  const rows = tbody.querySelectorAll('tr');
+  if (rows.length === 0) {
+    showToast('Harap tambahkan minimal satu baris konten', 'error');
+    return;
+  }
+
+  const formDataArray = [];
+  let isValid = true;
+
+  rows.forEach((row, index) => {
+    const dateInput = row.querySelector('.form-date');
+    const titleInput = row.querySelector('.form-title');
+    const picSelect = row.querySelector('.form-pic');
+    const platformSelect = row.querySelector('.form-platform');
+    const formatSelect = row.querySelector('.form-format');
+    const ratioSelect = row.querySelector('.form-ratio');
+    const statusSelect = row.querySelector('.form-status');
+
+    const dateVal = dateInput.value;
+    const titleVal = titleInput.value.trim();
+    const picVal = picSelect.value;
+    const platformVal = platformSelect.value;
+    const formatVal = formatSelect.value;
+    const ratioVal = ratioSelect.value;
+    const statusVal = statusSelect.value;
+
+    // Jika baris kosong sama sekali (selain tanggal & status default), lewati baris ini
+    const isBlankRow = !titleVal && !picVal && !platformVal && !formatVal && !ratioVal;
+    if (isBlankRow) {
+      return;
+    }
+
+    if (!dateVal || !titleVal || !picVal || !platformVal || !formatVal || !ratioVal || !statusVal) {
+      isValid = false;
+      row.style.background = 'rgba(244, 63, 94, 0.08)'; // Highlight baris bermasalah
+      setTimeout(() => {
+        row.style.background = '';
+      }, 3000);
+    } else {
+      formDataArray.push({
+        date: dateVal,
+        title: titleVal,
+        pic: picVal,
+        platform: platformVal,
+        format: formatVal,
+        ratio: ratioVal,
+        status: statusVal,
+        template: ''
+      });
+    }
+  });
+
+  if (!isValid) {
+    showToast('Harap lengkapi semua field yang wajib pada seluruh baris yang diisi', 'error');
+    return;
+  }
+
+  if (formDataArray.length === 0) {
+    showToast('Harap isi minimal satu baris konten', 'error');
+    return;
+  }
+
+  showLoading();
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      hideLoading();
+      if (result && result.success) {
+        showToast(`${result.count} konten berhasil ditambahkan!`, 'success');
+        closeBulkContentForm();
+        loadContent();
+      } else {
+        showToast('Gagal menambahkan konten massal', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Gagal menambahkan konten massal: ' + err, 'error');
+    })
+    .addMultipleContents(formDataArray);
+}
+
+// ========================
+// SECTION 9C: FILE UPLOAD
+// ========================
+let _uploadSelectedFiles = [];
+
+function openUploadForm(contentId) {
+  if (!checkProfileSelected()) return;
+  const modal = document.getElementById('upload-form-modal');
+  if (!modal) return;
+
+  const item = App.contentData.find(d => d.id === contentId);
+  if (!item) { showToast('Konten tidak ditemukan', 'error'); return; }
+
+  // Set content info
+  document.getElementById('upload-content-id').value = contentId;
+  document.getElementById('upload-content-title').textContent = item.title;
+  document.getElementById('upload-content-pic').textContent = item.pic;
+  document.getElementById('upload-content-platform').textContent = item.platform || '-';
+
+  // Show existing files list
+  const existingFileEl = document.getElementById('upload-existing-file');
+  const existingListEl = document.getElementById('upload-existing-list');
+
+  if (item.fileUrl && item.fileUrl.trim()) {
+    existingFileEl.style.display = 'block';
+    existingListEl.innerHTML = '<div style="color:var(--text-secondary);font-size:0.8rem;padding:4px 0;">Memuat lampiran...</div>';
+    
+    google.script.run
+      .withSuccessHandler(function(fileDetails) {
+        if (fileDetails && fileDetails.length > 0) {
+          existingListEl.innerHTML = fileDetails.map(function(file) {
+            return `<div class="existing-file-row">
+              <a href="${escapeHtml(file.url)}" target="_blank" class="existing-file-name" title="Buka di Drive">
+                📎 ${escapeHtml(file.name)}
+              </a>
+              <button type="button" class="btn-delete-row" onclick="handleDeleteFile('${escapeHtml(file.url)}')" style="padding:4px 8px;font-size:0.75rem;" title="Hapus file">
+                🗑️ Hapus
+              </button>
+            </div>`;
+          }).join('');
+        } else {
+          existingFileEl.style.display = 'none';
+        }
+      })
+      .withFailureHandler(function(err) {
+        console.error('Error fetching file details:', err);
+        const urls = item.fileUrl.split('\n').map(u => u.trim()).filter(Boolean);
+        existingListEl.innerHTML = urls.map(function(url, idx) {
+          return `<div class="existing-file-row">
+            <a href="${escapeHtml(url)}" target="_blank" class="existing-file-name" title="Buka di Drive">
+              📎 File ${idx + 1}
+            </a>
+            <button type="button" class="btn-delete-row" onclick="handleDeleteFile('${escapeHtml(url)}')" style="padding:4px 8px;font-size:0.75rem;" title="Hapus file">
+              🗑️ Hapus
+            </button>
+          </div>`;
+        }).join('');
+      })
+      .getFileDetails(item.fileUrl);
+  } else {
+    existingFileEl.style.display = 'none';
+    existingListEl.innerHTML = '';
+  }
+
+  // Reset file input & preview
+  clearFilePreview();
+  document.getElementById('upload-progress').style.display = 'none';
+  
+  // Load folders based on format (default to 'desain')
+  const format = item.format || 'desain';
+  loadDriveFolders(null, null, format);
+
+  // Setup drag-drop events
+  setupDropzone();
+
+  modal.style.display = 'flex';
+}
+
+function closeUploadForm() {
+  const modal = document.getElementById('upload-form-modal');
+  if (modal) modal.style.display = 'none';
+  _uploadSelectedFiles = [];
+}
+
+// App.driveFolders will be a map of parentId -> array of child folders
+App.driveFolders = {};
+
+function loadDriveFolders(selectedFolderIdToSelect, parentIdToSelect, rootId) {
+  const container = document.getElementById('folder-dropdowns-container');
+  const toggleBtn = document.getElementById('btn-toggle-new-folder');
+  const formContainer = document.getElementById('new-folder-form-container');
+  
+  if (!container) return;
+  container.innerHTML = '<select class="form-select" disabled><option>Memuat subfolder...</option></select>';
+  if (toggleBtn) toggleBtn.style.display = 'none';
+  if (formContainer) formContainer.style.display = 'none';
+
+  // Fetch Level 1 folders under rootId ('desain' or 'video')
+  google.script.run
+    .withSuccessHandler(function(folders) {
+      App.driveFolders = {}; // Reset cache on open
+      App.driveFolders[rootId] = folders || [];
+      
+      container.innerHTML = ''; // Clear loading
+      
+      // Render Level 1 dropdown under rootId
+      createDropdownLevel(rootId, 1, selectedFolderIdToSelect, parentIdToSelect, rootId);
+      
+      if (toggleBtn) toggleBtn.style.display = 'flex';
+      updateNewFolderParentLabel(rootId);
+    })
+    .withFailureHandler(function(err) {
+      container.innerHTML = '<select class="form-select" disabled><option>Gagal memuat subfolder</option></select>';
+      showToast('Gagal memuat daftar subfolder: ' + err, 'error');
+    })
+    .getSubFolders(rootId);
+}
+
+function createDropdownLevel(parentId, level, selectedFolderIdToSelect, parentIdToSelect, rootId) {
+  const container = document.getElementById('folder-dropdowns-container');
+  if (!container) return;
+
+  const levelFolders = App.driveFolders[parentId] || [];
+  if (levelFolders.length === 0) {
+    return; // No subfolders at this level
+  }
+
+  // Create select element
+  const select = document.createElement('select');
+  select.className = 'form-select mb-2';
+  select.id = 'folder-select-level-' + level;
+  select.setAttribute('data-level', level);
+  select.setAttribute('data-parent-id', parentId);
+  
+  // Set default option
+  const defaultOpt = document.createElement('option');
+  defaultOpt.value = '';
+  defaultOpt.textContent = level === 1 ? 'Pilih Subfolder Utama...' : 'Pilih Subfolder...';
+  select.appendChild(defaultOpt);
+
+  levelFolders.forEach(function(f) {
+    const opt = document.createElement('option');
+    opt.value = f.id;
+    opt.textContent = '📁 ' + f.name;
+    select.appendChild(opt);
+  });
+
+  // Event listener when selection changes
+  select.addEventListener('change', function() {
+    handleDropdownChange(level, rootId);
+  });
+
+  container.appendChild(select);
+
+  // Auto-select logic if selectedFolderIdToSelect is provided
+  if (selectedFolderIdToSelect) {
+    const found = levelFolders.some(function(f) { return f.id === selectedFolderIdToSelect; });
+    if (found) {
+      select.value = selectedFolderIdToSelect;
+      handleDropdownChange(level, rootId);
+    } else if (parentIdToSelect) {
+      const hasParent = levelFolders.some(function(f) { return f.id === parentIdToSelect; });
+      if (hasParent) {
+        select.value = parentIdToSelect;
+        loadSubFoldersForLevel(parentIdToSelect, level + 1, selectedFolderIdToSelect, rootId);
+      }
+    }
+  }
+}
+
+function handleDropdownChange(level, rootId) {
+  const container = document.getElementById('folder-dropdowns-container');
+  if (!container) return;
+
+  const currentSelect = document.getElementById('folder-select-level-' + level);
+  const selectedVal = currentSelect ? currentSelect.value : '';
+
+  // 1. Remove all dropdowns at levels deeper than the current level
+  const selects = container.querySelectorAll('select');
+  selects.forEach(function(sel) {
+    const selLevel = parseInt(sel.getAttribute('data-level'), 10);
+    if (selLevel > level) {
+      sel.remove();
+    }
+  });
+
+  // 2. If a folder was selected, fetch and render children
+  if (selectedVal) {
+    loadSubFoldersForLevel(selectedVal, level + 1, null, rootId);
+  } else {
+    updateNewFolderParentLabel(rootId);
+  }
+}
+
+function loadSubFoldersForLevel(parentId, level, selectedFolderIdToSelect, rootId) {
+  const container = document.getElementById('folder-dropdowns-container');
+  if (!container) return;
+
+  // Check cache first
+  if (App.driveFolders[parentId]) {
+    createDropdownLevel(parentId, level, selectedFolderIdToSelect, null, rootId);
+    updateNewFolderParentLabel(rootId);
+    return;
+  }
+
+  // Create a temporary disabled select to show loading status
+  const tempSelect = document.createElement('select');
+  tempSelect.className = 'form-select mb-2';
+  tempSelect.id = 'folder-select-temp';
+  tempSelect.disabled = true;
+  tempSelect.innerHTML = '<option>Memuat subfolder...</option>';
+  container.appendChild(tempSelect);
+
+  google.script.run
+    .withSuccessHandler(function(subfolders) {
+      tempSelect.remove(); // Remove temporary select
+      App.driveFolders[parentId] = subfolders || [];
+      
+      createDropdownLevel(parentId, level, selectedFolderIdToSelect, null, rootId);
+      updateNewFolderParentLabel(rootId);
+    })
+    .withFailureHandler(function(err) {
+      tempSelect.remove();
+      showToast('Gagal memuat subfolder: ' + err, 'error');
+      updateNewFolderParentLabel(rootId);
+    })
+    .getSubFolders(parentId);
+}
+
+function getSelectedFolderId(rootId) {
+  const container = document.getElementById('folder-dropdowns-container');
+  if (!container) return rootId;
+
+  const selects = container.querySelectorAll('select');
+  let selectedId = '';
+  
+  for (let i = selects.length - 1; i >= 0; i--) {
+    const val = selects[i].value;
+    if (val) {
+      selectedId = val;
+      break;
+    }
+  }
+
+  return selectedId || rootId;
+}
+
+function getSelectedFolderPath(rootId) {
+  const container = document.getElementById('folder-dropdowns-container');
+  if (!container) return rootId === 'desain' ? 'Desain (Utama)' : 'Video (Utama)';
+
+  const selects = container.querySelectorAll('select');
+  const pathParts = [];
+
+  selects.forEach(function(sel) {
+    if (sel.value) {
+      const selectedOpt = sel.options[sel.selectedIndex];
+      pathParts.push(selectedOpt.textContent.replace('📁 ', ''));
+    }
+  });
+
+  const rootName = rootId === 'desain' ? 'Desain (Utama)' : 'Video (Utama)';
+  return pathParts.length > 0 ? rootName + ' ➔ ' + pathParts.join(' ➔ ') : rootName;
+}
+
+// ========================
+// FOLDER CREATION LOGIC
+// ========================
+function toggleNewFolderForm() {
+  const formContainer = document.getElementById('new-folder-form-container');
+  if (!formContainer) return;
+
+  if (formContainer.style.display === 'none') {
+    formContainer.style.display = 'block';
+    document.getElementById('new-folder-name-input').value = '';
+    document.getElementById('new-folder-name-input').focus();
+    
+    // Retrieve rootId from active content
+    const contentId = document.getElementById('upload-content-id').value;
+    const item = App.contentData.find(d => d.id === contentId);
+    const rootId = item.format || 'desain';
+    updateNewFolderParentLabel(rootId);
+  } else {
+    formContainer.style.display = 'none';
+  }
+}
+
+function updateNewFolderParentLabel(rootId) {
+  const parentNameEl = document.getElementById('new-folder-parent-name');
+  if (!parentNameEl) return;
+
+  const selectedId = getSelectedFolderId(rootId);
+  if (selectedId === rootId) {
+    parentNameEl.textContent = rootId === 'desain' ? 'Desain (Utama)' : 'Video (Utama)';
+    parentNameEl.style.color = '#10B981'; // Sleek green
+  } else {
+    parentNameEl.textContent = getSelectedFolderPath(rootId);
+    parentNameEl.style.color = '#3B82F6'; // Sleek blue
+  }
+}
+
+function submitNewFolder() {
+  const nameInput = document.getElementById('new-folder-name-input');
+  if (!nameInput) return;
+  const name = nameInput.value.trim();
+
+  if (!name) {
+    showToast('Masukkan nama folder terlebih dahulu', 'error');
+    return;
+  }
+
+  // Retrieve rootId
+  const contentId = document.getElementById('upload-content-id').value;
+  const item = App.contentData.find(d => d.id === contentId);
+  const rootId = item.format || 'desain';
+
+  const parentId = getSelectedFolderId(rootId);
+  
+  const btnSubmit = document.querySelector('#new-folder-form-container button[onclick="submitNewFolder()"]');
+  const originalText = btnSubmit.textContent;
+  btnSubmit.textContent = 'Membuat...';
+  btnSubmit.disabled = true;
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      btnSubmit.textContent = originalText;
+      btnSubmit.disabled = false;
+
+      if (result && result.success) {
+        showToast('Folder "' + result.name + '" berhasil dibuat!', 'success');
+        toggleNewFolderForm();
+        
+        // Clear cache for parentId
+        delete App.driveFolders[parentId];
+        
+        // Reload folders at this level
+        if (parentId !== rootId) {
+          const parentSelect = containerFindSelectByValue(parentId);
+          if (parentSelect) {
+            const parentLevel = parseInt(parentSelect.getAttribute('data-level'), 10);
+            loadSubFoldersForLevel(parentId, parentLevel + 1, result.id, rootId);
+          } else {
+            loadDriveFolders(result.id, parentId, rootId);
+          }
+        } else {
+          loadDriveFolders(result.id, null, rootId);
+        }
+      } else {
+        showToast('Gagal membuat folder', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      btnSubmit.textContent = originalText;
+      btnSubmit.disabled = false;
+      showToast('Gagal membuat folder: ' + err, 'error');
+    })
+    .createDriveFolder(name, parentId);
+}
+
+function containerFindSelectByValue(val) {
+  const container = document.getElementById('folder-dropdowns-container');
+  if (!container) return null;
+  const selects = container.querySelectorAll('select');
+  for (let i = 0; i < selects.length; i++) {
+    if (selects[i].value === val) {
+      return selects[i];
+    }
+  }
+  return null;
+}
+
+function setupDropzone() {
+  const dropzone = document.getElementById('upload-dropzone');
+  const fileInput = document.getElementById('upload-file-input');
+  if (!dropzone || !fileInput) return;
+
+  // Remove old listeners by cloning
+  const newDropzone = dropzone.cloneNode(true);
+  dropzone.parentNode.replaceChild(newDropzone, dropzone);
+  const newFileInput = newDropzone.querySelector('#upload-file-input');
+
+  newDropzone.addEventListener('click', function() {
+    newFileInput.click();
+  });
+
+  newFileInput.addEventListener('change', function(e) {
+    if (e.target.files && e.target.files.length > 0) {
+      handleFilesSelected(e.target.files);
+    }
+  });
+
+  newDropzone.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    newDropzone.classList.add('drag-active');
+  });
+
+  newDropzone.addEventListener('dragleave', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    newDropzone.classList.remove('drag-active');
+  });
+
+  newDropzone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    newDropzone.classList.remove('drag-active');
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFilesSelected(e.dataTransfer.files);
+    }
+  });
+}
+
+function handleFilesSelected(files) {
+  if (!files || files.length === 0) return;
+
+  const maxSize = 50 * 1024 * 1024; // 50MB
+  
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    if (file.size > maxSize) {
+      showToast('Ukuran file "' + file.name + '" terlalu besar (maks 50MB)', 'error');
+      continue;
+    }
+
+    // Hindari duplikasi di antrean
+    const isDuplicate = _uploadSelectedFiles.some(f => f.name === file.name && f.size === file.size);
+    if (!isDuplicate) {
+      _uploadSelectedFiles.push(file);
+    }
+  }
+
+  renderPreviewQueue();
+}
+
+function removeFileFromQueue(idx) {
+  _uploadSelectedFiles.splice(idx, 1);
+  renderPreviewQueue();
+}
+
+function renderPreviewQueue() {
+  const previewEl = document.getElementById('upload-preview');
+  const previewListEl = document.getElementById('upload-preview-list');
+  const btnSubmit = document.getElementById('btn-upload-submit');
+
+  if (_uploadSelectedFiles.length === 0) {
+    previewEl.style.display = 'none';
+    previewListEl.innerHTML = '';
+    if (btnSubmit) btnSubmit.disabled = true;
+    return;
+  }
+
+  if (btnSubmit) btnSubmit.disabled = false;
+  previewEl.style.display = 'block';
+
+  previewListEl.innerHTML = _uploadSelectedFiles.map((file, idx) => {
+    let fileIcon = '📄';
+    if (file.type.startsWith('image/')) {
+      fileIcon = '🖼️';
+    } else if (file.type.startsWith('video/')) {
+      fileIcon = '🎬';
+    } else if (file.type.includes('pdf')) {
+      fileIcon = '📕';
+    }
+
+    return `<div class="preview-file-row">
+      <div class="preview-file-info">
+        <span class="preview-file-icon">${fileIcon}</span>
+        <div class="preview-file-details">
+          <span class="preview-file-title" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+          <span class="preview-file-meta">${formatFileSize(file.size)}</span>
+        </div>
+      </div>
+      <button type="button" class="preview-file-remove" onclick="removeFileFromQueue(${idx})" title="Hapus dari antrean">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function clearFilePreview() {
+  _uploadSelectedFiles = [];
+  renderPreviewQueue();
+
+  const fileInput = document.getElementById('upload-file-input');
+  if (fileInput) fileInput.value = '';
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function handleUploadSubmit() {
+  if (_uploadSelectedFiles.length === 0) {
+    showToast('Pilih file terlebih dahulu', 'error');
+    return;
+  }
+
+  const contentId = document.getElementById('upload-content-id').value;
+  if (!contentId) {
+    showToast('ID konten tidak valid', 'error');
+    return;
+  }
+
+  const item = App.contentData.find(d => d.id === contentId);
+  const rootId = item ? (item.format || 'desain') : 'desain';
+  const folderId = getSelectedFolderId(rootId);
+
+  // Show progress
+  const progressEl = document.getElementById('upload-progress');
+  const progressBar = document.getElementById('upload-progress-bar');
+  const progressText = document.getElementById('upload-progress-text');
+  
+  progressEl.style.display = 'block';
+  progressBar.style.width = '0%';
+  progressText.textContent = 'Menyiapkan proses upload...';
+
+  // Disable button
+  document.getElementById('btn-upload-submit').disabled = true;
+
+  let currentIdx = 0;
+  const totalFiles = _uploadSelectedFiles.length;
+
+  function uploadNext() {
+    if (currentIdx >= totalFiles) {
+      progressBar.style.width = '100%';
+      progressText.textContent = 'Semua file berhasil diupload!';
+
+      setTimeout(function() {
+        showToast(totalFiles + ' file berhasil diupload! Status diubah ke Completed.', 'success');
+        closeUploadForm();
+        loadContent();
+      }, 800);
+      return;
+    }
+
+    const file = _uploadSelectedFiles[currentIdx];
+    const fileNumber = currentIdx + 1;
+
+    // Update progress
+    const percentStart = Math.round((currentIdx / totalFiles) * 100);
+    progressBar.style.width = percentStart + '%';
+    progressText.textContent = `Mengupload file ${fileNumber} dari ${totalFiles}: ${file.name}...`;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const base64Data = e.target.result.split(',')[1];
+      const fileName = file.name;
+      const mimeType = file.type;
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            currentIdx++;
+            uploadNext();
+          } else {
+            showToast(`Gagal mengupload file: ${file.name}`, 'error');
+            resetUploadUI();
+          }
+        })
+        .withFailureHandler(function(err) {
+          showToast(`Gagal mengupload file ${file.name}: ${err}`, 'error');
+          resetUploadUI();
+        })
+        .uploadFileForContent(contentId, folderId, base64Data, fileName, mimeType);
+    };
+
+    reader.onerror = function() {
+      showToast(`Gagal membaca file: ${file.name}`, 'error');
+      resetUploadUI();
+    };
+
+    reader.readAsDataURL(file);
+  }
+
+  function resetUploadUI() {
+    progressEl.style.display = 'none';
+    document.getElementById('btn-upload-submit').disabled = false;
+  }
+
+  // Start sequential upload
+  uploadNext();
+}
+
+function handleDeleteFile(fileUrl) {
+  if (!checkProfileSelected()) return;
+  const contentId = document.getElementById('upload-content-id').value;
+  if (!contentId || !fileUrl) return;
+  if (!confirm('Hapus file lampiran ini? File akan dipindahkan ke Trash di Google Drive.')) return;
+
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(result) {
+      hideLoading();
+      if (result && result.success) {
+        showToast('File berhasil dihapus', 'success');
+        
+        // Update local state to avoid full reload just to refresh modal list
+        const item = App.contentData.find(d => d.id === contentId);
+        if (item && item.fileUrl) {
+          const urls = item.fileUrl.split('\n').map(u => u.trim()).filter(Boolean);
+          const remaining = urls.filter(u => u !== fileUrl);
+          item.fileUrl = remaining.join('\n');
+          
+          // Re-render openUploadForm to reflect deleted file immediately
+          openUploadForm(contentId);
+        }
+        
+        loadContent();
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Gagal menghapus file: ' + err, 'error');
+    })
+    .deleteUploadedFile(contentId, fileUrl);
+}
+
+// ========================
+// SECTION 10: TEAM MANAGEMENT
+// ========================
+function renderTeam() {
+  const container = document.getElementById('team-grid');
+  const emptyState = document.getElementById('team-empty-state');
+  if (!container) return;
+
+  let filtered = App.teamData;
+  if (App.currentTeamFilter && App.currentTeamFilter !== 'all') {
+    filtered = filtered.filter(m => m.role === App.currentTeamFilter);
+  }
+
+  if (!filtered.length) {
+    container.innerHTML = '';
+    if (emptyState) emptyState.style.display = 'block';
+    return;
+  }
+  if (emptyState) emptyState.style.display = 'none';
+
+  container.innerHTML = filtered.map(member => {
+    const roleClass = getRoleClass(member.role);
+    return `<div class="team-card">
+      <div class="team-card-actions">
+        <button class="btn btn-icon" onclick="openTeamForm('${escapeHtml(member.email)}')" title="Edit">✏️</button>
+        <button class="btn btn-icon" onclick="handleDeleteMember('${escapeHtml(member.email)}')" title="Hapus">🗑️</button>
+      </div>
+      <div class="team-avatar ${roleClass}">${getInitials(member.name)}</div>
+      <div class="team-card-name">${escapeHtml(member.name)}</div>
+      <span class="role-badge ${roleClass}">${escapeHtml(member.role)}</span>
+      <div class="team-card-email">${escapeHtml(member.email || '-')}</div>
+    </div>`;
+  }).join('');
+}
+
+function filterTeamByRole(role) {
+  App.currentTeamFilter = role;
+  document.querySelectorAll('.tab-filter').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.role === role);
+  });
+  renderTeam();
+}
+
+function openTeamForm(email) {
+  if (!checkProfileSelected()) return;
+  const modal = document.getElementById('team-form-modal');
+  const title = document.getElementById('team-form-title');
+  const form = document.getElementById('team-form');
+
+  if (email) {
+    const member = App.teamData.find(m => m.email === email);
+    if (!member) { showToast('Anggota tidak ditemukan', 'error'); return; }
+    title.textContent = 'Edit Anggota';
+    document.getElementById('team-edit-email').value = email;
+    document.getElementById('team-name').value = member.name;
+    document.getElementById('team-role').value = member.role;
+    document.getElementById('team-email').value = member.email || '';
+  } else {
+    title.textContent = 'Tambah Anggota Baru';
+    form.reset();
+    document.getElementById('team-edit-email').value = '';
+  }
+
+  modal.style.display = 'flex';
+}
+
+function closeTeamForm() {
+  document.getElementById('team-form-modal').style.display = 'none';
+}
+
+function handleTeamSubmit(e) {
+  e.preventDefault();
+  if (!checkProfileSelected()) return;
+
+  const data = {
+    name: document.getElementById('team-name').value,
+    role: document.getElementById('team-role').value,
+    email: document.getElementById('team-email').value
+  };
+  const oldEmail = document.getElementById('team-edit-email').value;
+
+  if (!data.name || !data.role || !data.email) {
+    showToast('Harap isi semua field', 'error');
+    return;
+  }
+
+  showLoading();
+
+  if (oldEmail) {
+    google.script.run
+      .withSuccessHandler(function() {
+        hideLoading();
+        showToast('Anggota berhasil diperbarui!', 'success');
+        closeTeamForm();
+        loadTeam();
+        loadPICList();
+      })
+      .withFailureHandler(function(err) {
+        hideLoading();
+        showToast('Gagal memperbarui: ' + err, 'error');
+      })
+      .updateTeamMember(oldEmail, data, App.currentUserProfile);
+  } else {
+    google.script.run
+      .withSuccessHandler(function() {
+        hideLoading();
+        showToast('Anggota baru berhasil ditambahkan!', 'success');
+        closeTeamForm();
+        loadTeam();
+        loadPICList();
+      })
+      .withFailureHandler(function(err) {
+        hideLoading();
+        showToast('Gagal menambahkan: ' + err, 'error');
+      })
+      .addTeamMember(data, App.currentUserProfile);
+  }
+}
+
+function handleDeleteMember(email) {
+  if (!checkProfileSelected()) return;
+  if (!confirm('Hapus anggota ini dari tim?')) return;
+
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function() {
+      hideLoading();
+      showToast('Anggota berhasil dihapus', 'success');
+      loadTeam();
+      loadPICList();
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Gagal menghapus: ' + err, 'error');
+    })
+    .deleteTeamMember(email, App.currentUserProfile);
+}
+
+// ========================
+// SECTION 11: ONBOARDING
+// ========================
+function openOnboarding() {
+  App.onboardingStep = 0;
+  renderOnboardingStep();
+  document.getElementById('onboarding-modal').style.display = 'flex';
+}
+
+function closeOnboarding() {
+  document.getElementById('onboarding-modal').style.display = 'none';
+  localStorage.setItem('kominfo_onboarded', 'true');
+}
+
+function nextOnboardingStep() {
+  if (App.onboardingStep < 4) {
+    App.onboardingStep++;
+    renderOnboardingStep();
+  } else {
+    closeOnboarding();
+  }
+}
+
+function prevOnboardingStep() {
+  if (App.onboardingStep > 0) {
+    App.onboardingStep--;
+    renderOnboardingStep();
+  }
+}
+
+function renderOnboardingStep() {
+  const steps = document.querySelectorAll('.onboarding-step');
+  const dots = document.querySelectorAll('.progress-dot');
+  const prevBtn = document.getElementById('btn-onboarding-prev');
+  const nextBtn = document.getElementById('btn-onboarding-next');
+
+  steps.forEach((s, i) => s.classList.toggle('active', i === App.onboardingStep));
+  dots.forEach((d, i) => d.classList.toggle('active', i === App.onboardingStep));
+
+  if (prevBtn) prevBtn.style.display = App.onboardingStep > 0 ? 'inline-flex' : 'none';
+  if (nextBtn) nextBtn.textContent = App.onboardingStep === 4 ? '🚀 Mulai Sekarang' : 'Selanjutnya →';
+}
+
+// ========================
+// SECTION 12: UTILITIES
+// ========================
+function showToast(message, type) {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = 'toast toast-' + (type || 'success');
+  toast.innerHTML = (type === 'error' ? '❌ ' : '✅ ') + escapeHtml(message);
+  container.appendChild(toast);
+
+  setTimeout(function() {
+    toast.classList.add('removing');
+    setTimeout(function() { toast.remove(); }, 300);
+  }, 3000);
+}
+
+function showLoading() {
+  const overlay = document.getElementById('loading-overlay');
+  if (overlay) { overlay.style.display = 'flex'; overlay.classList.remove('hidden'); }
+}
+
+function hideLoading() {
+  const overlay = document.getElementById('loading-overlay');
+  if (overlay) overlay.classList.add('hidden');
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return '-';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.getDate() + ' ' + MONTH_SHORT[d.getMonth()] + ' ' + d.getFullYear();
+  } catch(e) { return dateStr; }
+}
+
+function formatDateForInput(dateStr) {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  } catch(e) { return ''; }
+}
+
+function isUrgent(dateStr, status) {
+  if (!dateStr || status === 'Completed') return false;
+  try {
+    const postDate = new Date(dateStr);
+    const now = new Date();
+    const diffMs = postDate.getTime() - now.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    return diffDays <= 1 && diffDays >= -1;
+  } catch(e) { return false; }
+}
+
+function animateCounter(element, target) {
+  if (!element) return;
+  const start = parseInt(element.textContent) || 0;
+  if (start === target) { element.textContent = target; return; }
+  const duration = 600;
+  const startTime = performance.now();
+
+  function update(currentTime) {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+    element.textContent = Math.round(start + (target - start) * eased);
+    if (progress < 1) requestAnimationFrame(update);
+  }
+  requestAnimationFrame(update);
+}
+
+function getStatusClass(status) {
+  const map = {
+    'Draft': 'badge-draft',
+    'In Progress': 'badge-inprogress',
+    'Review': 'badge-review',
+    'Completed': 'badge-completed'
+  };
+  return map[status] || 'badge-draft';
+}
+
+function getRoleClass(role) {
+  const map = {
+    'Kadiv': 'kadiv',
+    'Admin': 'admin',
+    'Graphic Designer': 'graphic-designer',
+    'Videographer': 'videographer'
+  };
+  return map[role] || 'admin';
+}
+
+function getInitials(name) {
+  if (!name) return '?';
+  return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
+function getAvatarStyle(name) {
+  // Generate a consistent color from name
+  const colors = ['#f59e0b', '#3b82f6', '#8b5cf6', '#10b981', '#ef4444', '#06b6d4', '#ec4899'];
+  let hash = 0;
+  for (let i = 0; i < (name || '').length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  const color = colors[Math.abs(hash) % colors.length];
+  return 'background:' + color + ';';
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function debounce(func, wait) {
+  let timeout;
+  return function(...args) {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), wait);
+  };
+}
+
+// ========================
+// SECTION 13: FILTER SYNC
+// ========================
+function syncFilters() {
+  // Dashboard filters
+  const fm = document.getElementById('filter-month');
+  const fy = document.getElementById('filter-year');
+  if (fm) fm.value = App.currentMonth;
+  if (fy) fy.value = App.currentYear;
+
+  // Kanban filters
+  const km = document.getElementById('kanban-filter-month');
+  const ky = document.getElementById('kanban-filter-year');
+  if (km) km.value = App.currentMonth;
+  if (ky) ky.value = App.currentYear;
+
+  // Stats filters
+  const sm = document.getElementById('stats-filter-month');
+  const sy = document.getElementById('stats-filter-year');
+  if (sm) sm.value = App.currentMonth;
+  if (sy) sy.value = App.currentYear;
+
+  // Calendar sync
+  App.calendarMonth = App.currentMonth - 1;
+  App.calendarYear = App.currentYear;
+}
+
+function handleFilterChange(month, year) {
+  App.currentMonth = parseInt(month);
+  App.currentYear = parseInt(year);
+  syncFilters();
+  loadContent();
+  if (App.currentView === 'statistics') loadStats();
+}
+
+// ========================
+// SECTION 14: SETUP & MIGRATION
+// ========================
+function runSetup() {
+  if (!confirm('Buat database baru? Ini akan membuat Google Spreadsheet baru sebagai database.')) return;
+
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(result) {
+      hideLoading();
+      if (result && result.success) {
+        showToast('Database berhasil dibuat!', 'success');
+        alert('Database telah dibuat!\n\nURL Spreadsheet:\n' + (result.spreadsheetUrl || 'N/A') + '\n\nHalaman akan dimuat ulang.');
+        location.reload();
+      } else {
+        showToast('Setup gagal', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Setup gagal: ' + err, 'error');
+    })
+    .initialSetup();
+}
+
+function runMigration() {
+  if (!confirm('Migrasi data dari spreadsheet lama? Pastikan database baru sudah di-setup terlebih dahulu.')) return;
+
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(result) {
+      hideLoading();
+      if (result && result.success) {
+        showToast(result.migratedCount + ' data berhasil dimigrasikan!', 'success');
+        loadContent();
+      } else {
+        showToast('Migrasi gagal: ' + (result ? result.message : 'Unknown error'), 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Migrasi gagal: ' + err, 'error');
+    })
+    .migrateFromOldSpreadsheet();
+}
+
+// ========================
+// SECTION 15: EVENT LISTENERS
+// ========================
+function setupEventListeners() {
+  // Sidebar navigation
+  document.querySelectorAll('.nav-item[data-view]').forEach(item => {
+    item.addEventListener('click', function() {
+      navigateTo(this.dataset.view);
+    });
+  });
+
+  // Hamburger menu
+  const hamburger = document.getElementById('hamburger-btn');
+  if (hamburger) {
+    hamburger.addEventListener('click', function() {
+      document.getElementById('sidebar').classList.add('open');
+      const overlay = document.querySelector('.sidebar-overlay');
+      if (overlay) overlay.classList.add('open');
+    });
+  }
+
+  // Dashboard filters
+  const filterMonth = document.getElementById('filter-month');
+  const filterYear = document.getElementById('filter-year');
+  if (filterMonth) filterMonth.addEventListener('change', function() {
+    handleFilterChange(this.value, document.getElementById('filter-year').value);
+  });
+  if (filterYear) filterYear.addEventListener('change', function() {
+    handleFilterChange(document.getElementById('filter-month').value, this.value);
+  });
+
+  // Kanban filters
+  const kfm = document.getElementById('kanban-filter-month');
+  const kfy = document.getElementById('kanban-filter-year');
+  if (kfm) kfm.addEventListener('change', function() {
+    handleFilterChange(this.value, document.getElementById('kanban-filter-year').value);
+  });
+  if (kfy) kfy.addEventListener('change', function() {
+    handleFilterChange(document.getElementById('kanban-filter-month').value, this.value);
+  });
+
+  // Stats filters
+  const sfm = document.getElementById('stats-filter-month');
+  const sfy = document.getElementById('stats-filter-year');
+  if (sfm) sfm.addEventListener('change', function() {
+    handleFilterChange(this.value, document.getElementById('stats-filter-year').value);
+  });
+  if (sfy) sfy.addEventListener('change', function() {
+    handleFilterChange(document.getElementById('stats-filter-month').value, this.value);
+  });
+
+  // Calendar buttons
+  const prevBtn = document.getElementById('btn-prev-month');
+  const nextBtn = document.getElementById('btn-next-month');
+  if (prevBtn) prevBtn.addEventListener('click', prevMonth);
+  if (nextBtn) nextBtn.addEventListener('click', nextMonth);
+
+  // Close modals on Escape
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      closeContentForm();
+      closeUploadForm();
+      closeTeamForm();
+      closeOnboarding();
+    }
+  });
+
+  // Close modals on overlay click
+  document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', function(e) {
+      if (e.target === this) {
+        this.style.display = 'none';
+      }
+    });
+  });
+}
+
+/* ===================================================
+   SECTION 21: DIRECT DOWNLOAD & BULK DOWNLOAD HELPERS
+   =================================================== */
+function getDirectDownloadUrl(url) {
+  if (!url) return '';
+  let fileId = '';
+  const fileDMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (fileDMatch) {
+    fileId = fileDMatch[1];
+  } else {
+    const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (idMatch) {
+      fileId = idMatch[1];
+    }
+  }
+  if (fileId) {
+    return 'https://drive.google.com/uc?export=download&id=' + fileId;
+  }
+  return url;
+}
+
+function getDrivePreviewUrl(url) {
+  if (!url) return '';
+  let fileId = '';
+  const fileDMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (fileDMatch) {
+    fileId = fileDMatch[1];
+  } else {
+    const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (idMatch) {
+      fileId = idMatch[1];
+    }
+  }
+  if (fileId) {
+    return 'https://drive.google.com/file/d/' + fileId + '/preview';
+  }
+  return url;
+}
+
+function triggerDownload(url) {
+  const directUrl = getDirectDownloadUrl(url);
+  const iframe = document.createElement('iframe');
+  iframe.style.display = 'none';
+  iframe.src = directUrl;
+  document.body.appendChild(iframe);
+  setTimeout(function() {
+    document.body.removeChild(iframe);
+  }, 3000);
+}
+
+function downloadRowFiles(urls) {
+  if (!urls || urls.length === 0) return;
+  urls.forEach(function(url, index) {
+    setTimeout(function() {
+      triggerDownload(url);
+    }, index * 600);
+  });
+}
+
+function downloadSelectedFiles() {
+  const checkboxes = document.querySelectorAll('.content-checkbox');
+  const checkedBoxes = Array.from(checkboxes).filter(cb => cb.checked);
+  
+  let allUrls = [];
+  checkedBoxes.forEach(cb => {
+    const item = App.contentData.find(d => d.id === cb.value);
+    if (item && item.fileUrl) {
+      const urls = item.fileUrl.split('\n').map(u => u.trim()).filter(Boolean);
+      allUrls = allUrls.concat(urls);
+    }
+  });
+
+  if (allUrls.length === 0) {
+    showToast('Tidak ada file lampiran yang ditemukan pada konten terpilih', 'warning');
+    return;
+  }
+
+  showToast('Mulai mengunduh ' + allUrls.length + ' file...', 'info');
+  downloadRowFiles(allUrls);
+}
+
+/* ===================================================
+   SECTION 22: SPA CONTENT DETAIL VIEW LOGIC
+   =================================================== */
+function openContentDetail(id) {
+  const item = App.contentData.find(d => d.id === id);
+  if (!item) {
+    showToast('Konten tidak ditemukan', 'error');
+    return;
+  }
+
+  App.currentDetailContentId = id;
+  
+  // Isi bidang teks detail
+  document.getElementById('detail-view-title').textContent = item.title;
+  document.getElementById('detail-view-id').textContent = item.id;
+  document.getElementById('detail-date').textContent = formatDate(item.date);
+  document.getElementById('detail-pic').textContent = item.pic;
+  
+  // Platform badge
+  const platformEl = document.getElementById('detail-platform');
+  platformEl.innerHTML = '<span class="badge badge-platform">' + escapeHtml(item.platform || '-') + '</span>';
+  
+  // Format & Rasio
+  const formatRatioEl = document.getElementById('detail-format-ratio');
+  const formatText = item.format === 'desain' ? '🎨 Desain (Grafis)' : (item.format === 'video' ? '🎬 Video' : item.format || '-');
+  formatRatioEl.textContent = formatText + ' • Rasio ' + (item.ratio || '-');
+  
+  // Status badge
+  const statusBadge = document.getElementById('detail-status-badge');
+  const statusClass = getStatusClass(item.status);
+  statusBadge.className = 'badge ' + statusClass;
+  statusBadge.textContent = item.status;
+  
+  // Link Template
+  const templateWrapper = document.getElementById('detail-template-wrapper');
+  const templateLink = document.getElementById('detail-template-link');
+  if (item.template && item.template.trim()) {
+    templateWrapper.style.display = 'flex';
+    templateLink.href = item.template;
+    templateLink.textContent = item.template;
+  } else {
+    templateWrapper.style.display = 'none';
+  }
+  
+  // Deskripsi / Caption Konten
+  const descBox = document.getElementById('detail-description');
+  if (item.description && item.description.trim()) {
+    descBox.textContent = item.description;
+    descBox.style.fontStyle = 'normal';
+    descBox.style.color = 'var(--text-primary)';
+  } else {
+    descBox.textContent = 'Belum ada deskripsi / caption untuk konten ini.';
+    descBox.style.fontStyle = 'italic';
+    descBox.style.color = 'var(--text-muted)';
+  }
+  
+  // Render file preview and list
+  renderDetailPreview(item.fileUrl);
+  renderDetailFileList(item.id, item.fileUrl);
+
+  // Navigasi ke halaman detail
+  navigateTo('content-detail');
+}
+
+function goBackToPreviousView() {
+  navigateTo(App.previousView || 'dashboard');
+}
+
+function copyDetailDescription() {
+  const id = App.currentDetailContentId;
+  const item = App.contentData.find(d => d.id === id);
+  
+  if (item && item.description && item.description.trim()) {
+    navigator.clipboard.writeText(item.description)
+      .then(function() {
+        showToast('Caption berhasil disalin!', 'success');
+      })
+      .catch(function(err) {
+        showToast('Gagal menyalin caption: ' + err, 'error');
+      });
+  } else {
+    showToast('Tidak ada caption untuk disalin', 'warning');
+  }
+}
+
+function renderDetailPreview(fileUrl) {
+  const container = document.getElementById('detail-preview-container');
+  const thumbsContainer = document.getElementById('detail-preview-thumbs');
+  
+  container.innerHTML = '';
+  thumbsContainer.innerHTML = '';
+  thumbsContainer.style.display = 'none';
+
+  if (!fileUrl || !fileUrl.trim()) {
+    container.innerHTML = `
+      <div class="preview-placeholder">
+        <span class="preview-placeholder-icon">📭</span>
+        <div class="preview-placeholder-text">Belum ada berkas lampiran yang diunggah.</div>
+        <button class="btn btn-primary" onclick="openUploadForm('${App.currentDetailContentId}')" style="font-weight:600;">
+          📤 Unggah File
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  const urls = fileUrl.split('\n').map(u => u.trim()).filter(Boolean);
+  
+  if (urls.length === 1) {
+    const previewUrl = getDrivePreviewUrl(urls[0]);
+    container.innerHTML = `<iframe src="${previewUrl}" allow="autoplay"></iframe>`;
+  } else {
+    // Multi files
+    thumbsContainer.style.display = 'flex';
+    const previewUrl = getDrivePreviewUrl(urls[0]);
+    container.innerHTML = `<iframe id="active-detail-preview-iframe" src="${previewUrl}" allow="autoplay"></iframe>`;
+    
+    urls.forEach(function(url, idx) {
+      const thumb = document.createElement('div');
+      thumb.className = 'preview-thumb' + (idx === 0 ? ' active' : '');
+      thumb.textContent = 'File ' + (idx + 1);
+      thumb.title = url;
+      thumb.onclick = function() {
+        thumbsContainer.querySelectorAll('.preview-thumb').forEach(t => t.classList.remove('active'));
+        thumb.classList.add('active');
+        document.getElementById('active-detail-preview-iframe').src = getDrivePreviewUrl(url);
+      };
+      thumbsContainer.appendChild(thumb);
+    });
+  }
+}
+
+function handleDetailEdit() {
+  if (App.currentDetailContentId) {
+    openContentForm(App.currentDetailContentId);
+  }
+}
+
+function handleDetailDownload() {
+  const id = App.currentDetailContentId;
+  const item = App.contentData.find(d => d.id === id);
+  if (item && item.fileUrl) {
+    const urls = item.fileUrl.split('\n').map(u => u.trim()).filter(Boolean);
+    downloadRowFiles(urls);
+  } else {
+    showToast('Tidak ada file lampiran untuk didownload', 'warning');
+  }
+}
+
+function handleDetailDelete() {
+  const id = App.currentDetailContentId;
+  if (!id) return;
+  
+  if (!confirm('Hapus konten ini? Tindakan ini tidak bisa dibatalkan.')) return;
+
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function() {
+      hideLoading();
+      showToast('Konten berhasil dihapus', 'success');
+      goBackToPreviousView();
+      loadContent();
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Gagal menghapus konten: ' + err, 'error');
+    })
+    .deleteContent(id, App.currentUserProfile);
+}
+
+// ========================
+// SECTION 16: ADMIN AREA & PROFILE
+// ========================
+function checkUserRole() {
+  // Cek apakah admin sudah dibuka secara manual (tersimpan di localStorage)
+  if (localStorage.getItem('kominfo_admin_unlocked') === 'true') {
+    enableAdminMode(false);
+    return;
+  }
+  
+  google.script.run
+    .withSuccessHandler(function(roleInfo) {
+      if (roleInfo && roleInfo.isAdmin) {
+        enableAdminMode(false);
+      }
+      if (roleInfo && roleInfo.spreadsheetUrl) {
+        App.currentSpreadsheetUrl = roleInfo.spreadsheetUrl;
+      }
+    })
+    .withFailureHandler(function(err) {
+      console.error('Error checkUserRole:', err);
+    })
+    .getUserRole();
+}
+
+function enableAdminMode(showNotify) {
+  App.isAdmin = true;
+  localStorage.setItem('kominfo_admin_unlocked', 'true');
+  
+  const navAdmin = document.getElementById('nav-admin');
+  if (navAdmin) navAdmin.style.display = 'flex';
+  
+  const loginBtn = document.getElementById('nav-admin-login');
+  const logoutBtn = document.getElementById('nav-admin-logout');
+  if (loginBtn) loginBtn.style.display = 'none';
+  if (logoutBtn) logoutBtn.style.display = 'flex';
+  
+  if (showNotify) {
+    showToast('Akses Admin diaktifkan!', 'success');
+  }
+}
+
+function logoutAdmin() {
+  App.isAdmin = false;
+  localStorage.removeItem('kominfo_admin_unlocked');
+  
+  const navAdmin = document.getElementById('nav-admin');
+  if (navAdmin) navAdmin.style.display = 'none';
+  
+  const loginBtn = document.getElementById('nav-admin-login');
+  const logoutBtn = document.getElementById('nav-admin-logout');
+  if (loginBtn) loginBtn.style.display = 'flex';
+  if (logoutBtn) logoutBtn.style.display = 'none';
+  
+  showToast('Keluar dari Admin Area', 'info');
+  
+  if (App.currentView === 'admin') {
+    navigateTo('dashboard');
+  }
+}
+
+function promptAdminLogin() {
+  const password = prompt('Masukkan Kode Akses Admin:');
+  if (password === null) return;
+  
+  if (password === 'kominfoadmin') {
+    enableAdminMode(true);
+  } else {
+    showToast('Kode Akses salah!', 'error');
+  }
+}
+
+function checkProfileSelected() {
+  if (App.currentUserProfile === 'Anonymous' || !App.currentUserProfile) {
+    showToast('Silakan pilih profil Anda terlebih dahulu di sidebar!', 'error');
+    const profileSelect = document.getElementById('profile-select');
+    if (profileSelect) {
+      profileSelect.focus();
+      // Memberikan efek glow merah sementara
+      profileSelect.style.border = '1px solid #f43f5e';
+      profileSelect.style.boxShadow = '0 0 12px rgba(244, 63, 94, 0.4)';
+      profileSelect.style.outline = 'none';
+      setTimeout(() => {
+        profileSelect.style.border = '';
+        profileSelect.style.boxShadow = '';
+      }, 3000);
+    }
+    return false;
+  }
+  return true;
+}
+
+function populateProfileSelector() {
+  const select = document.getElementById('profile-select');
+  if (!select) return;
+  
+  const savedProfile = localStorage.getItem('kominfo_user_profile') || 'Anonymous';
+  App.currentUserProfile = savedProfile;
+  
+  let options = `<option value="Anonymous">Pilih Pengguna...</option>`;
+  App.teamData.forEach(member => {
+    const isSelected = member.name === savedProfile ? 'selected' : '';
+    options += `<option value="${escapeHtml(member.name)}" ${isSelected}>${escapeHtml(member.name)} (${escapeHtml(member.role)})</option>`;
+  });
+  
+  select.innerHTML = options;
+}
+
+function changeProfile(value) {
+  App.currentUserProfile = value;
+  localStorage.setItem('kominfo_user_profile', value);
+  showToast(`Profil aktif: ${value}`, 'info');
+}
+
+function renderAdminView() {
+  switchAdminTab('activity');
+}
+
+function switchAdminTab(tabName) {
+  document.querySelectorAll('#view-admin .tab-filter').forEach(btn => {
+    btn.classList.toggle('active', btn.id === `tab-btn-${tabName}`);
+  });
+  
+  if (tabName === 'activity') {
+    document.getElementById('admin-tab-activity').style.display = 'block';
+    document.getElementById('admin-tab-config').style.display = 'none';
+    loadActivityLogs();
+  } else if (tabName === 'config') {
+    document.getElementById('admin-tab-activity').style.display = 'none';
+    document.getElementById('admin-tab-config').style.display = 'block';
+    loadDatabaseConfig();
+  }
+}
+
+function loadActivityLogs() {
+  const tbody = document.getElementById('log-table-body');
+  const emptyState = document.getElementById('log-empty-state');
+  if (!tbody) return;
+  
+  tbody.innerHTML = `<tr><td colspan="4" style="text-align: center;"><div class="skeleton skeleton-row"></div></td></tr>`;
+  if (emptyState) emptyState.style.display = 'none';
+  
+  google.script.run
+    .withSuccessHandler(function(logs) {
+      App.activityLogs = logs || [];
+      renderActivityLogsTable(App.activityLogs);
+    })
+    .withFailureHandler(function(err) {
+      console.error('Error loadActivityLogs:', err);
+      showToast('Gagal memuat log aktivitas', 'error');
+      tbody.innerHTML = '';
+      if (emptyState) emptyState.style.display = 'block';
+    })
+    .getActivityLogs();
+}
+
+function renderActivityLogsTable(logs) {
+  const tbody = document.getElementById('log-table-body');
+  const emptyState = document.getElementById('log-empty-state');
+  if (!tbody) return;
+  
+  if (!logs || logs.length === 0) {
+    tbody.innerHTML = '';
+    if (emptyState) emptyState.style.display = 'block';
+    return;
+  }
+  
+  if (emptyState) emptyState.style.display = 'none';
+  
+  tbody.innerHTML = logs.map(log => {
+    return `<tr>
+      <td style="color: var(--text-secondary); font-size: 0.85rem;">${escapeHtml(log.time)}</td>
+      <td style="font-weight: 600;">${escapeHtml(log.user)}</td>
+      <td><span class="badge" style="background: rgba(234, 67, 53, 0.1); color: #ea4335; font-size: 0.75rem;">${escapeHtml(log.activity)}</span></td>
+      <td style="color: var(--text-secondary); font-size: 0.9rem; text-align: left;">${escapeHtml(log.details)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function filterActivityLogs() {
+  const query = document.getElementById('log-search-input').value.toLowerCase().trim();
+  if (!App.activityLogs) return;
+  
+  if (!query) {
+    renderActivityLogsTable(App.activityLogs);
+    return;
+  }
+  
+  const filtered = App.activityLogs.filter(log => {
+    return log.user.toLowerCase().includes(query) || 
+           log.activity.toLowerCase().includes(query) || 
+           log.details.toLowerCase().includes(query);
+  });
+  
+  renderActivityLogsTable(filtered);
+}
+
+function loadDatabaseConfig() {
+  const titleEl = document.getElementById('config-db-title');
+  const urlEl = document.getElementById('config-db-url');
+  
+  if (App.currentSpreadsheetUrl) {
+    urlEl.href = App.currentSpreadsheetUrl;
+    urlEl.textContent = App.currentSpreadsheetUrl;
+    
+    let dbName = 'Database Utama';
+    try {
+      const id = App.currentSpreadsheetUrl.split('/d/')[1].split('/')[0];
+      dbName = `Spreadsheet ID: ...${id.substring(id.length - 8)}`;
+    } catch(e) {}
+    titleEl.textContent = dbName;
+  } else {
+    google.script.run
+      .withSuccessHandler(function(roleInfo) {
+        if (roleInfo && roleInfo.spreadsheetUrl) {
+          App.currentSpreadsheetUrl = roleInfo.spreadsheetUrl;
+          urlEl.href = roleInfo.spreadsheetUrl;
+          urlEl.textContent = roleInfo.spreadsheetUrl;
+          
+          let dbName = 'Database Utama';
+          try {
+            const id = roleInfo.spreadsheetUrl.split('/d/')[1].split('/')[0];
+            dbName = `Spreadsheet ID: ...${id.substring(id.length - 8)}`;
+          } catch(e) {}
+          titleEl.textContent = dbName;
+        } else {
+          titleEl.textContent = 'Tidak dapat memuat info';
+          urlEl.textContent = roleInfo.spreadsheetError || 'Spreadsheet ID belum dikonfigurasi atau tidak memiliki akses.';
+          urlEl.removeAttribute('href');
+        }
+      })
+      .getUserRole();
+  }
+  
+  // Load Pengaturan Notifikasi & Kalender
+  loadNotificationSettings();
+}
+
+function loadNotificationSettings() {
+  google.script.run
+    .withSuccessHandler(function(settings) {
+      if (settings) {
+        // Simpan token asli di memory untuk disubmit kembali jika user tidak mengubah password input
+        App.fonnteToken = settings.token || '';
+        
+        // WhatsApp Fonnte Settings
+        const tokenInput = document.getElementById('fonnte-token');
+        const targetInput = document.getElementById('fonnte-target');
+        const tokenMaskEl = document.getElementById('fonnte-token-masked');
+        
+        targetInput.value = settings.target || '';
+        tokenInput.value = ''; // Biarkan kosong untuk keamanan
+        
+        if (settings.maskedToken) {
+          tokenInput.placeholder = '••••••••••••••••••••••••';
+          tokenMaskEl.textContent = 'Token aktif: ' + settings.maskedToken;
+          tokenMaskEl.style.display = 'block';
+        } else {
+          tokenInput.placeholder = 'Masukkan Fonnte API Token';
+          tokenMaskEl.style.display = 'none';
+        }
+        
+        // Google Calendar Settings
+        const calStatusText = document.getElementById('calendar-status-text');
+        const calLink = document.getElementById('calendar-link');
+        
+        if (settings.calendarUrl) {
+          calStatusText.innerHTML = `Terhubung ke: <strong>${settings.calendarName || 'Content Planning Kominfo'}</strong>`;
+          calLink.href = settings.calendarUrl;
+          calLink.style.display = 'inline-block';
+        } else {
+          calStatusText.textContent = 'Belum terhubung. Jalankan Uji Coba untuk membuat kalender baru.';
+          calLink.style.display = 'none';
+        }
+        
+        // Trigger Status
+        const triggerBadge = document.getElementById('trigger-status-badge');
+        if (settings.triggerActive) {
+          triggerBadge.textContent = '🟢 AKTIF (Harian ~08.00)';
+          triggerBadge.style.color = '#34a853';
+        } else {
+          triggerBadge.textContent = '🔴 NONAKTIF';
+          triggerBadge.style.color = '#ea4335';
+        }
+      }
+    })
+    .withFailureHandler(function(err) {
+      console.error('Error loadNotificationSettings:', err);
+    })
+    .getNotificationSettings();
+}
+
+function saveIntegrationSettings() {
+  const token = document.getElementById('fonnte-token').value.trim();
+  const target = document.getElementById('fonnte-target').value.trim();
+  
+  if (!target) {
+    showToast('Target WhatsApp wajib diisi (No HP / ID Grup).', 'warning');
+    return;
+  }
+  
+  showLoading();
+  const tokenToSend = token ? token : (App.fonnteToken || '');
+  
+  google.script.run
+    .withSuccessHandler(function(success) {
+      hideLoading();
+      if (success) {
+        showToast('Pengaturan WhatsApp berhasil disimpan!', 'success');
+        loadNotificationSettings(); // Reload
+      } else {
+        showToast('Gagal menyimpan pengaturan.', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Error: ' + err.message, 'error');
+    })
+    .saveNotificationSettings(tokenToSend, target, App.currentUserProfile);
+}
+
+function toggleDeadlineTrigger(activate) {
+  showLoading();
+  const action = activate ? 'setupNotificationTriggers' : 'removeNotificationTriggers';
+  
+  google.script.run
+    .withSuccessHandler(function(success) {
+      hideLoading();
+      if (success) {
+        showToast(activate ? 'Scanner Deadline Harian diaktifkan!' : 'Scanner Deadline Harian dinonaktifkan!', 'success');
+        loadNotificationSettings(); // Reload
+      } else {
+        showToast('Gagal mengubah status trigger.', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Error: ' + err.message, 'error');
+    })
+    [action]();
+}
+
+function runIntegrationTest() {
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(result) {
+      hideLoading();
+      let alertMsg = '=== HASIL UJI COBA INTEGRASI ===\n\n';
+      
+      // WhatsApp status
+      alertMsg += '1. WhatsApp (Fonnte):\n';
+      if (result.whatsapp.success) {
+        alertMsg += '   ✅ BERHASIL\n   Detail: ' + result.whatsapp.message + '\n\n';
+      } else {
+        alertMsg += '   ❌ GAGAL\n   Detail: ' + result.whatsapp.message + '\n\n';
+      }
+      
+      // Calendar status
+      alertMsg += '2. Google Calendar:\n';
+      if (result.calendar.success) {
+        alertMsg += '   ✅ BERHASIL\n   Nama Kalender: "' + result.calendar.name + '"\n   Detail: ' + result.calendar.message + '\n';
+      } else {
+        alertMsg += '   ❌ GAGAL\n   Detail: ' + result.calendar.message + '\n';
+      }
+      
+      alert(alertMsg);
+      loadNotificationSettings(); // Reload to show Calendar Link
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Uji coba gagal dijalankan: ' + err.message, 'error');
+    })
+    .testSystemIntegrations();
+}
+
+function saveSpreadsheetLink() {
+  const urlInput = document.getElementById('admin-spreadsheet-url');
+  const urlOrId = urlInput.value.trim();
+  if (!urlOrId) {
+    showToast('Tolong masukkan URL atau ID spreadsheet terlebih dahulu.', 'warning');
+    return;
+  }
+  
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(result) {
+      hideLoading();
+      if (result && result.success) {
+        showToast('Database berhasil dihubungkan!', 'success');
+        
+        let message = `Database baru berhasil dihubungkan:\n\nNama: "${result.title}"\nURL: ${result.url}`;
+        if (result.needsSetup) {
+          message += '\n\n⚠️ PERINGATAN: Spreadsheet ini belum memiliki struktur database dashboard (Master_Content / Team_Members). Halaman akan dialihkan untuk meminta setup.';
+        } else {
+          message += '\n\nKoneksi berhasil. Halaman akan dimuat ulang.';
+        }
+        
+        alert(message);
+        location.reload();
+      } else {
+        showToast('Gagal memuat spreadsheet', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      alert('Gagal menghubungkan database:\n' + err);
+      showToast('Error: ' + err, 'error');
+    })
+    .updateSpreadsheetLink(urlOrId, App.currentUserProfile);
+}
+
+function renderDetailFileList(contentId, fileUrl) {
+  const wrapper = document.getElementById('detail-files-wrapper');
+  const listEl = document.getElementById('detail-files-list');
+  if (!wrapper || !listEl) return;
+  
+  if (!fileUrl || !fileUrl.trim()) {
+    wrapper.style.display = 'none';
+    listEl.innerHTML = '';
+    return;
+  }
+  
+  wrapper.style.display = 'block';
+  listEl.innerHTML = '<div style="color:var(--text-secondary);font-size:0.8rem;padding:4px 0;">Memuat nama file...</div>';
+  
+  google.script.run
+    .withSuccessHandler(function(fileDetails) {
+      if (fileDetails && fileDetails.length > 0) {
+        listEl.innerHTML = fileDetails.map(function(file) {
+          return `<div class="existing-file-row" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); border-radius: var(--radius-sm); padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm);">
+            <a href="${escapeHtml(file.url)}" target="_blank" style="color: var(--text-primary); text-decoration: none; font-size: 0.88rem; display: flex; align-items: center; gap: 6px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80%;" title="Buka di Drive">
+              📎 ${escapeHtml(file.name)}
+            </a>
+            <button type="button" class="btn btn-icon" onclick="handleDeleteFileFromDetail('${escapeHtml(file.url)}')" style="color: var(--status-urgent); font-size: 1rem; border: none; background: transparent; cursor: pointer; padding: 4px;" title="Hapus file">
+              🗑️
+            </button>
+          </div>`;
+        }).join('');
+      } else {
+        wrapper.style.display = 'none';
+      }
+    })
+    .withFailureHandler(function(err) {
+      console.error('Error fetching file details in detail view:', err);
+      const urls = fileUrl.split('\n').map(u => u.trim()).filter(Boolean);
+      listEl.innerHTML = urls.map(function(url, idx) {
+        return `<div class="existing-file-row" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); border-radius: var(--radius-sm); padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm);">
+          <a href="${escapeHtml(url)}" target="_blank" style="color: var(--text-primary); text-decoration: none; font-size: 0.88rem; display: flex; align-items: center; gap: 6px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80%;" title="Buka di Drive">
+            📎 File ${idx + 1}
+          </a>
+          <button type="button" class="btn btn-icon" onclick="handleDeleteFileFromDetail('${escapeHtml(url)}')" style="color: var(--status-urgent); font-size: 1rem; border: none; background: transparent; cursor: pointer; padding: 4px;" title="Hapus file">
+            🗑️
+          </button>
+        </div>`;
+      }).join('');
+    })
+    .getFileDetails(fileUrl);
+}
+
+function handleDeleteFileFromDetail(fileUrl) {
+  if (!checkProfileSelected()) return;
+  const contentId = App.currentDetailContentId;
+  if (!contentId || !fileUrl) return;
+  if (!confirm('Hapus file lampiran ini? File akan dipindahkan ke Trash di Google Drive.')) return;
+  
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(result) {
+      hideLoading();
+      if (result && result.success) {
+        showToast('File berhasil dihapus', 'success');
+        
+        // Update local state
+        const item = App.contentData.find(d => d.id === contentId);
+        if (item && item.fileUrl) {
+          const urls = item.fileUrl.split('\n').map(u => u.trim()).filter(Boolean);
+          const remaining = urls.filter(u => u !== fileUrl);
+          item.fileUrl = remaining.join('\n');
+          
+          // Re-render both file list and preview
+          renderDetailFileList(contentId, item.fileUrl);
+          renderDetailPreview(item.fileUrl);
+        }
+        
+        loadContent();
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Gagal menghapus file: ' + err, 'error');
+    })
+    .deleteUploadedFile(contentId, fileUrl, App.currentUserProfile);
+}
+
+function handleDeleteAllFilesFromDetail() {
+  if (!checkProfileSelected()) return;
+  const contentId = App.currentDetailContentId;
+  if (!contentId) return;
+  if (!confirm('Hapus SEMUA file lampiran pada konten ini? Semua file akan dipindahkan ke Trash di Google Drive.')) return;
+  
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(result) {
+      hideLoading();
+      if (result && result.success) {
+        showToast(`Berhasil menghapus ${result.count} file`, 'success');
+        
+        // Update local state
+        const item = App.contentData.find(d => d.id === contentId);
+        if (item) {
+          item.fileUrl = '';
+          
+          // Re-render both file list and preview
+          renderDetailFileList(contentId, '');
+          renderDetailPreview('');
+        }
+        
+        loadContent();
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Gagal menghapus semua file: ' + err, 'error');
+    })
+    .deleteAllUploadedFiles(contentId, App.currentUserProfile);
+}
+
+// ===================================
+// PROKER FORM & KEPANITIAAN FORM JS
+// ===================================
+
+let prokerBulkMode = false;
+function toggleProkerBulkMode() {
+  prokerBulkMode = !prokerBulkMode;
+  const singleGroup = document.getElementById('proker-single-group');
+  const bulkGroup = document.getElementById('proker-bulk-group');
+  const singleInput = document.getElementById('proker-form-name');
+  const bulkInput = document.getElementById('proker-form-name-bulk');
+  const toggleBtn = document.getElementById('proker-bulk-toggle');
+  
+  if (prokerBulkMode) {
+    singleGroup.style.display = 'none';
+    bulkGroup.style.display = 'block';
+    singleInput.required = false;
+    bulkInput.required = true;
+    toggleBtn.textContent = 'Mode Tunggal';
+  } else {
+    singleGroup.style.display = 'block';
+    bulkGroup.style.display = 'none';
+    singleInput.required = true;
+    bulkInput.required = false;
+    toggleBtn.textContent = 'Tambah Banyak';
+  }
+}
+
+function openProkerForm(rowIdx) {
+  if (!checkProfileSelected()) return;
+  const modal = document.getElementById('proker-form-modal');
+  const title = document.getElementById('proker-modal-title');
+  const form = document.getElementById('proker-form');
+  const bulkToggle = document.getElementById('proker-bulk-toggle');
+  
+  prokerBulkMode = true;
+  toggleProkerBulkMode(); // Sets to false (Single Mode)
+  
+  if (rowIdx) {
+    // Edit mode
+    bulkToggle.style.display = 'none';
+    const item = App.prokerData.find(p => p.rowIdx === rowIdx);
+    if (!item) { showToast('Program kerja tidak ditemukan', 'error'); return; }
+    
+    title.textContent = 'Edit Program Kerja';
+    document.getElementById('proker-form-rowidx').value = rowIdx;
+    document.getElementById('proker-form-no').value = item.no || '';
+    document.getElementById('proker-form-name').value = item.name || '';
+    document.getElementById('proker-form-execution').value = item.execution || '';
+    
+    // Determine frequency type
+    const totalMonths = 11; // Feb - Des
+    const isEveryMonth = item.activeMonths && item.activeMonths.length === totalMonths;
+    const isOnceAYear = item.activeMonths && item.activeMonths.length === 1;
+    
+    if (isEveryMonth) {
+      document.getElementById('proker-form-freq').value = 'bulanan';
+    } else if (isOnceAYear) {
+      document.getElementById('proker-form-freq').value = 'tahunan';
+    } else {
+      document.getElementById('proker-form-freq').value = 'kustom';
+    }
+    
+    // Set checkboxes
+    const cbs = document.querySelectorAll('.proker-month-cb');
+    cbs.forEach(cb => {
+      cb.checked = item.activeMonths && item.activeMonths.includes(cb.value);
+    });
+    
+    handleProkerFreqChange(document.getElementById('proker-form-freq').value);
+  } else {
+    // Add mode
+    bulkToggle.style.display = 'block';
+    title.textContent = 'Tambah Program Kerja';
+    form.reset();
+    document.getElementById('proker-form-rowidx').value = '';
+    
+    // Check all checkboxes by default (Setiap Bulan)
+    document.getElementById('proker-form-freq').value = 'bulanan';
+    handleProkerFreqChange('bulanan');
+  }
+  
+  modal.style.display = 'flex';
+}
+
+function closeProkerForm() {
+  document.getElementById('proker-form-modal').style.display = 'none';
+}
+
+function handleProkerFreqChange(val) {
+  const cbs = document.querySelectorAll('.proker-month-cb');
+  if (val === 'bulanan') {
+    cbs.forEach(cb => {
+      cb.checked = true;
+      cb.disabled = true;
+      cb.onclick = null;
+    });
+  } else if (val === 'tahunan') {
+    cbs.forEach(cb => {
+      cb.disabled = false;
+      cb.onclick = function() {
+        if (this.checked) {
+          cbs.forEach(other => { if (other !== this) other.checked = false; });
+        }
+      };
+    });
+  } else {
+    cbs.forEach(cb => {
+      cb.disabled = false;
+      cb.onclick = null;
+    });
+  }
+}
+
+function handleProkerSubmit(e) {
+  e.preventDefault();
+  if (!checkProfileSelected()) return;
+  
+  const rowIdxVal = document.getElementById('proker-form-rowidx').value;
+  const no = document.getElementById('proker-form-no').value.trim();
+  const execution = document.getElementById('proker-form-execution').value.trim();
+  
+  // Collect active months
+  const activeMonths = [];
+  document.querySelectorAll('.proker-month-cb').forEach(cb => {
+    if (cb.checked) activeMonths.push(cb.value);
+  });
+  
+  if (prokerBulkMode) {
+    const bulkNamesText = document.getElementById('proker-form-name-bulk').value.trim();
+    const names = bulkNamesText.split('\n').map(n => n.trim()).filter(n => n !== '');
+    
+    if (names.length === 0) {
+      showToast('Harap masukkan minimal satu nama program kerja!', 'warning');
+      return;
+    }
+    
+    const prokers = names.map((name, i) => {
+      let prokerNo = no;
+      if (no && !isNaN(no)) {
+        prokerNo = String(parseInt(no, 10) + i);
+      }
+      return {
+        no: prokerNo,
+        name: name,
+        execution: execution,
+        activeMonths: activeMonths
+      };
+    });
+    
+    showLoading();
+    google.script.run
+      .withSuccessHandler(function(result) {
+        hideLoading();
+        closeProkerForm();
+        showToast(`Berhasil menambahkan ${prokers.length} Program Kerja!`, 'success');
+        loadProkerData();
+      })
+      .withFailureHandler(function(err) {
+        hideLoading();
+        showToast('Gagal menyimpan banyak proker: ' + err.message, 'error');
+      })
+      .saveMultipleProkers(prokers);
+      
+  } else {
+    const name = document.getElementById('proker-form-name').value.trim();
+    const prokerData = {
+      rowIdx: rowIdxVal ? parseInt(rowIdxVal, 10) : null,
+      no: no,
+      name: name,
+      execution: execution,
+      activeMonths: activeMonths
+    };
+    
+    showLoading();
+    google.script.run
+      .withSuccessHandler(function(result) {
+        hideLoading();
+        closeProkerForm();
+        showToast('Program Kerja berhasil disimpan!', 'success');
+        loadProkerData();
+      })
+      .withFailureHandler(function(err) {
+        hideLoading();
+        showToast('Gagal menyimpan Proker: ' + err.message, 'error');
+      })
+      .saveProker(prokerData);
+  }
+}
+
+let kepanitiaanBulkMode = false;
+function toggleKepanitiaanBulkMode() {
+  kepanitiaanBulkMode = !kepanitiaanBulkMode;
+  const singleGroup = document.getElementById('kepanitiaan-single-group');
+  const bulkGroup = document.getElementById('kepanitiaan-bulk-group');
+  const singleInput = document.getElementById('kepanitiaan-form-title');
+  const bulkInput = document.getElementById('kepanitiaan-form-title-bulk');
+  const toggleBtn = document.getElementById('kepanitiaan-bulk-toggle');
+  
+  if (kepanitiaanBulkMode) {
+    singleGroup.style.display = 'none';
+    bulkGroup.style.display = 'block';
+    singleInput.required = false;
+    bulkInput.required = true;
+    toggleBtn.textContent = 'Mode Tunggal';
+  } else {
+    singleGroup.style.display = 'block';
+    bulkGroup.style.display = 'none';
+    singleInput.required = true;
+    bulkInput.required = false;
+    toggleBtn.textContent = 'Tambah Banyak';
+  }
+}
+
+function openKepanitiaanForm(month, eventIdx) {
+  if (!checkProfileSelected()) return;
+  const modal = document.getElementById('kepanitiaan-form-modal');
+  const form = document.getElementById('kepanitiaan-form');
+  const bulkToggle = document.getElementById('kepanitiaan-bulk-toggle');
+  form.reset();
+  
+  kepanitiaanBulkMode = true;
+  toggleKepanitiaanBulkMode(); // Sets to false (Single Mode)
+  
+  // Populate team members list
+  const container = document.getElementById('kepanitiaan-members-container');
+  if (!container) return;
+  
+  const members = App.teamData || [];
+  if (members.length === 0) {
+    container.innerHTML = '<div style="color: var(--text-secondary); font-size: 0.85rem; grid-column: 1 / -1; text-align: center;">Tidak ada anggota tim yang termuat. Silakan muat ulang halaman.</div>';
+    return;
+  }
+  
+  container.innerHTML = members.map(m => `
+    <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem; cursor:pointer;">
+      <input type="checkbox" class="kep-member-cb" value="${escapeHtml(m.name)}">
+      <span>${escapeHtml(m.name)}</span>
+    </label>
+  `).join('');
+  
+  if (month !== undefined && eventIdx !== undefined) {
+    // Edit mode
+    bulkToggle.style.display = 'none';
+    
+    const monthData = App.kepanitiaanData.find(m => m.month.toUpperCase() === month.toUpperCase());
+    if (!monthData || !monthData.events[eventIdx]) {
+      showToast('Kegiatan tidak ditemukan!', 'error');
+      return;
+    }
+    
+    const event = monthData.events[eventIdx];
+    
+    document.getElementById('kepanitiaan-form-index').value = eventIdx;
+    document.getElementById('kepanitiaan-form-month').value = month.toUpperCase();
+    document.getElementById('kepanitiaan-form-month').disabled = true; // Disable month select during edit
+    document.getElementById('kepanitiaan-form-title').value = event.title;
+    
+    // Check members
+    const memberCbs = document.querySelectorAll('.kep-member-cb');
+    memberCbs.forEach(cb => {
+      const isMember = event.members.some(name => name.toLowerCase().trim() === cb.value.toLowerCase().trim() || cb.value.toLowerCase().trim().includes(name.toLowerCase().trim()));
+      cb.checked = isMember;
+    });
+  } else {
+    // Add mode
+    bulkToggle.style.display = 'block';
+    document.getElementById('kepanitiaan-form-index').value = '';
+    document.getElementById('kepanitiaan-form-month').value = '';
+    document.getElementById('kepanitiaan-form-month').disabled = false;
+  }
+  
+  modal.style.display = 'flex';
+}
+
+function closeKepanitiaanForm() {
+  document.getElementById('kepanitiaan-form-modal').style.display = 'none';
+}
+
+function handleKepanitiaanSubmit(e) {
+  e.preventDefault();
+  if (!checkProfileSelected()) return;
+  
+  const monthSelect = document.getElementById('kepanitiaan-form-month');
+  const month = monthSelect.value;
+  const eventIdxVal = document.getElementById('kepanitiaan-form-index').value;
+  
+  // Collect selected members
+  const members = [];
+  document.querySelectorAll('.kep-member-cb').forEach(cb => {
+    if (cb.checked) members.push(cb.value);
+  });
+  
+  if (members.length === 0) {
+    showToast('Harap pilih minimal satu anggota panitia!', 'warning');
+    return;
+  }
+  
+  const monthData = App.kepanitiaanData.find(m => m.month.toUpperCase() === month.toUpperCase());
+  let monthEvents = monthData ? JSON.parse(JSON.stringify(monthData.events)) : []; // Deep copy
+  
+  if (eventIdxVal !== '') {
+    // Edit mode
+    const eventIdx = parseInt(eventIdxVal, 10);
+    const title = document.getElementById('kepanitiaan-form-title').value.trim();
+    
+    monthEvents[eventIdx] = {
+      title: title,
+      members: members
+    };
+    
+    showLoading();
+    google.script.run
+      .withSuccessHandler(function(result) {
+        hideLoading();
+        closeKepanitiaanForm();
+        showToast('Kepanitiaan berhasil diupdate!', 'success');
+        loadKepanitiaanData();
+      })
+      .withFailureHandler(function(err) {
+        hideLoading();
+        showToast('Gagal mengupdate Kepanitiaan: ' + err.message, 'error');
+      })
+      .updateKepanitiaanEvents(month, monthEvents);
+      
+  } else {
+    // Add mode
+    if (kepanitiaanBulkMode) {
+      const bulkTitlesText = document.getElementById('kepanitiaan-form-title-bulk').value.trim();
+      const titles = bulkTitlesText.split('\n').map(t => t.trim()).filter(t => t !== '');
+      
+      if (titles.length === 0) {
+        showToast('Harap masukkan minimal satu nama kegiatan!', 'warning');
+        return;
+      }
+      
+      titles.forEach(title => {
+        monthEvents.push({
+          title: title,
+          members: members
+        });
+      });
+    } else {
+      const title = document.getElementById('kepanitiaan-form-title').value.trim();
+      monthEvents.push({
+        title: title,
+        members: members
+      });
+    }
+    
+    showLoading();
+    google.script.run
+      .withSuccessHandler(function(result) {
+        hideLoading();
+        closeKepanitiaanForm();
+        showToast('Kepanitiaan berhasil ditambahkan!', 'success');
+        loadKepanitiaanData();
+      })
+      .withFailureHandler(function(err) {
+        hideLoading();
+        showToast('Gagal menambah Kepanitiaan: ' + err.message, 'error');
+      })
+      .updateKepanitiaanEvents(month, monthEvents);
+  }
+}
+
+function handleDeleteKepanitiaanEvent(month, eventIdx) {
+  if (!confirm('Apakah Anda yakin ingin menghapus kegiatan kepanitiaan ini?')) {
+    return;
+  }
+  
+  const monthData = App.kepanitiaanData.find(m => m.month.toUpperCase() === month.toUpperCase());
+  if (!monthData || !monthData.events[eventIdx]) {
+    showToast('Kegiatan tidak ditemukan!', 'error');
+    return;
+  }
+  
+  let monthEvents = JSON.parse(JSON.stringify(monthData.events));
+  monthEvents.splice(eventIdx, 1);
+  
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(result) {
+      hideLoading();
+      showToast('Kepanitiaan berhasil dihapus!', 'success');
+      loadKepanitiaanData();
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Gagal menghapus Kepanitiaan: ' + err.message, 'error');
+    })
+    .updateKepanitiaanEvents(month, monthEvents);
+}
+</script>

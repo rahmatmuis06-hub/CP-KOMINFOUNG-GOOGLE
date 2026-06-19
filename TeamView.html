@@ -1,0 +1,71 @@
+<section id="view-team" class="view">
+  <!-- Header -->
+  <div class="view-header">
+    <h2 class="view-title">👥 Tim Saya</h2>
+    <button class="btn btn-primary" onclick="openTeamForm()">
+      <span>＋</span> Tambah Anggota
+    </button>
+  </div>
+
+  <!-- Role Filter Tabs -->
+  <div class="tab-filters">
+    <button class="tab-filter active" data-role="all" onclick="filterTeamByRole('all')">Semua</button>
+    <button class="tab-filter" data-role="Kadiv" onclick="filterTeamByRole('Kadiv')">Kadiv</button>
+    <button class="tab-filter" data-role="Admin" onclick="filterTeamByRole('Admin')">Admin</button>
+    <button class="tab-filter" data-role="Graphic Designer" onclick="filterTeamByRole('Graphic Designer')">Graphic Designer</button>
+    <button class="tab-filter" data-role="Videographer" onclick="filterTeamByRole('Videographer')">Videographer</button>
+  </div>
+
+  <!-- Team Grid -->
+  <div id="team-grid" class="team-grid">
+    <!-- Populated by JavaScript -->
+  </div>
+
+  <!-- Empty State -->
+  <div id="team-empty-state" class="empty-state" style="display:none">
+    <div class="empty-icon">👥</div>
+    <h3>Belum Ada Anggota Tim</h3>
+    <p>Klik tombol "+ Tambah Anggota" untuk menambah anggota tim.</p>
+  </div>
+</section>
+
+<!-- Team Form Modal -->
+<div id="team-form-modal" class="modal-overlay" style="display:none">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 id="team-form-title">Tambah Anggota Baru</h2>
+      <button class="btn-close" onclick="closeTeamForm()">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="team-form" onsubmit="handleTeamSubmit(event)">
+        <input type="hidden" id="team-edit-email">
+        
+        <div class="form-group">
+          <label for="team-name">👤 Nama Lengkap</label>
+          <input type="text" id="team-name" class="form-input" required placeholder="Nama lengkap anggota">
+        </div>
+        
+        <div class="form-group">
+          <label for="team-role">💼 Role / Jabatan</label>
+          <select id="team-role" class="form-select" required>
+            <option value="">Pilih Role...</option>
+            <option value="Kadiv">Kadiv</option>
+            <option value="Admin">Admin</option>
+            <option value="Graphic Designer">Graphic Designer</option>
+            <option value="Videographer">Videographer</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label for="team-email">📧 Email</label>
+          <input type="email" id="team-email" class="form-input" required placeholder="email@contoh.com">
+        </div>
+        
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeTeamForm()">Batal</button>
+          <button type="submit" class="btn btn-primary">💾 Simpan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

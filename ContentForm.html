@@ -1,0 +1,94 @@
+<div id="content-form-modal" class="modal-overlay" style="display:none">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 id="form-modal-title">Tambah Konten Baru</h2>
+      <button class="btn-close" onclick="closeContentForm()">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="content-form" onsubmit="handleContentSubmit(event)">
+        <input type="hidden" id="form-content-id">
+        
+        <div class="form-group">
+          <label for="form-date">📅 Tanggal Posting</label>
+          <input type="date" id="form-date" class="form-input" required>
+        </div>
+        
+        <div class="form-group">
+          <label for="form-title">📝 Judul Konten</label>
+          <input type="text" id="form-title" class="form-input" required placeholder="Contoh: Hari Buruh Nasional">
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="form-pic">👤 PIC / Penanggung Jawab</label>
+            <select id="form-pic" class="form-select" required>
+              <option value="">Pilih PIC...</option>
+              <!-- Populated dynamically from getPICList -->
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="form-platform">📱 Platform</label>
+            <select id="form-platform" class="form-select" required>
+              <option value="">Pilih Platform...</option>
+              <option value="Flyer">Flyer</option>
+              <option value="Reels">Reels</option>
+              <option value="TikTok">TikTok</option>
+              <option value="Feeds">Feeds</option>
+              <option value="Story">Story</option>
+            </select>
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="form-format">🎨 Jenis Konten (Format)</label>
+            <select id="form-format" class="form-select" required>
+              <option value="">Pilih Jenis...</option>
+              <option value="desain">🎨 Desain (Gambar/Grafis)</option>
+              <option value="video">🎬 Video</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="form-template">🔗 Link Template</label>
+            <input type="text" id="form-template" class="form-input" placeholder="Link referensi (opsional)">
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="form-ratio">📐 Rasio</label>
+            <select id="form-ratio" class="form-select" required>
+              <option value="">Pilih Rasio...</option>
+              <option value="16:9">16:9</option>
+              <option value="1:1">1:1</option>
+              <option value="4:5">4:5</option>
+              <option value="9:16">9:16</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="form-status">🏷️ Status</label>
+            <select id="form-status" class="form-select" required>
+              <option value="Draft">Draft</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Review">Review</option>
+              <option value="Completed">Completed</option>
+            </select>
+          </div>
+        </div>
+        
+        <div class="form-group" style="margin-top: 15px;">
+          <label for="form-description">📝 Deskripsi / Caption Konten</label>
+          <textarea id="form-description" class="form-input" rows="3" placeholder="Masukkan deskripsi konten atau caption media sosial di sini..."></textarea>
+        </div>
+        
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeContentForm()">Batal</button>
+          <button type="submit" class="btn btn-primary">💾 Simpan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

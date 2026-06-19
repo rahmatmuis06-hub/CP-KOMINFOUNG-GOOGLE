@@ -1,0 +1,200 @@
+<section id="view-admin" class="view">
+  <!-- Header -->
+  <div class="view-header">
+    <h2 class="view-title">🛡️ Admin Area</h2>
+  </div>
+
+  <!-- Inner Tabs -->
+  <div class="tab-filters" style="margin-bottom: var(--space-lg);">
+    <button class="tab-filter active" id="tab-btn-activity" onclick="switchAdminTab('activity')">📋 Log Aktivitas</button>
+    <button class="tab-filter" id="tab-btn-config" onclick="switchAdminTab('config')">⚙️ Konfigurasi Sistem</button>
+  </div>
+
+  <!-- Tab Contents -->
+  
+  <!-- 1. Activity Log Tab -->
+  <div id="admin-tab-activity" class="admin-tab-content active">
+    <!-- Search and Actions Bar -->
+    <div class="glass-card" style="padding: 1.2rem; margin-bottom: var(--space-md); display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); flex-wrap: wrap;">
+      <div style="position: relative; flex-grow: 1; max-width: 400px;">
+        <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-secondary);">🔍</span>
+        <input type="text" id="log-search-input" class="form-input" placeholder="Cari log berdasarkan nama atau aktivitas..." oninput="filterActivityLogs()" style="padding-left: 2.2rem; margin-bottom: 0;">
+      </div>
+      <div>
+        <button class="btn btn-secondary" onclick="loadActivityLogs()" style="background: rgba(255,255,255,0.05); color: var(--text-primary); border: 1px solid var(--border-glass);">
+          🔄 Refresh Log
+        </button>
+      </div>
+    </div>
+
+    <!-- Logs Table -->
+    <div class="table-container glass-card" style="max-height: 550px; overflow-y: auto;">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width: 18%;">Waktu</th>
+            <th style="width: 18%;">Pengguna</th>
+            <th style="width: 18%;">Aktivitas</th>
+            <th style="width: 46%;">Detail</th>
+          </tr>
+        </thead>
+        <tbody id="log-table-body">
+          <!-- Populated by JS -->
+        </tbody>
+      </table>
+      <div id="log-empty-state" class="empty-state" style="display:none; padding: 4rem 2rem;">
+        <div class="empty-icon">📋</div>
+        <h3>Belum Ada Log Aktivitas</h3>
+        <p>Aktivitas anggota tim akan muncul di sini setelah mereka melakukan aksi.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. System Configuration Tab -->
+  <div id="admin-tab-config" class="admin-tab-content" style="display: none;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: var(--space-lg);">
+      
+      <!-- Current Connection Card -->
+      <div class="glass-card" style="padding: var(--space-xl); display: flex; flex-direction: column; justify-content: space-between; border-left: 4px solid var(--primary);">
+        <div>
+          <h3 style="margin-bottom: var(--space-md); display: flex; align-items: center; gap: 8px;">
+            <span>🌐</span> Database Saat Ini
+          </h3>
+          <p style="color: var(--text-secondary); margin-bottom: var(--space-lg); font-size: 0.95rem;">
+            Dashboard saat ini terhubung ke Spreadsheet berikut di Google Drive:
+          </p>
+          <div style="background: rgba(0,0,0,0.2); border: 1px solid var(--border-glass); padding: var(--space-md); border-radius: var(--radius-md); word-break: break-all; margin-bottom: var(--space-lg);">
+            <div style="font-weight: 700; color: var(--primary); margin-bottom: 6px;" id="config-db-title">Memuat...</div>
+            <a href="#" id="config-db-url" target="_blank" style="color: var(--text-secondary); font-size: 0.85rem; text-decoration: underline; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              Memuat URL...
+            </a>
+          </div>
+        </div>
+        <div style="color: var(--status-completed); background: var(--status-completed-bg); padding: 8px 12px; border-radius: var(--radius-sm); font-size: 0.85rem; display: flex; align-items: center; gap: 6px; width: fit-content; font-weight: 500;">
+          <span style="font-size: 1rem;">●</span> Database Aktif & Terhubung
+        </div>
+      </div>
+
+      <!-- Change Connection Card -->
+      <div class="glass-card" style="padding: var(--space-xl);">
+        <h3 style="margin-bottom: var(--space-md); display: flex; align-items: center; gap: 8px;">
+          <span>🔗</span> Hubungkan Database Lain / Sebelumnya
+        </h3>
+        <p style="color: var(--text-secondary); margin-bottom: var(--space-md); font-size: 0.95rem;">
+          Tempel URL atau ID Spreadsheet database Anda yang lain (misal database lama yang datanya terputus) di bawah ini untuk menghubungkannya kembali:
+        </p>
+        <div class="form-group" style="margin-bottom: var(--space-md);">
+          <input type="text" id="admin-spreadsheet-url" class="form-input" placeholder="Tempel URL atau ID Google Spreadsheet di sini" style="width: 100%;">
+        </div>
+        <button class="btn btn-primary" onclick="saveSpreadsheetLink()" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;">
+          💾 Simpan Koneksi Database
+        </button>
+      </div>
+
+      <!-- System Re-Initialization Card -->
+      <div class="glass-card" style="padding: var(--space-xl); grid-column: span 1;">
+        <h3 style="margin-bottom: var(--space-md); display: flex; align-items: center; gap: 8px;">
+          <span>🛠️</span> Inisialisasi & Alat Migrasi
+        </h3>
+        <p style="color: var(--text-secondary); margin-bottom: var(--space-lg); font-size: 0.95rem;">
+          Gunakan tombol di bawah ini untuk membuat database baru (Spreadsheet kosong baru) atau memindahkan data dari sistem lama.
+        </p>
+        
+        <div style="display: flex; flex-direction: column; gap: var(--space-md);">
+          <div style="border: 1px solid rgba(239, 68, 68, 0.2); background: rgba(239, 68, 68, 0.03); padding: var(--space-md); border-radius: var(--radius-md); border-left: 4px solid var(--status-urgent);">
+            <div style="font-weight: 700; color: var(--status-urgent); margin-bottom: 4px; font-size: 0.9rem;">⚠️ Perhatian: Setup Baru</div>
+            <p style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: var(--space-sm);">
+              Membuat database baru akan membuat Google Spreadsheet kosong baru di Google Drive Anda dan memutuskan spreadsheet saat ini.
+            </p>
+            <button class="btn btn-danger" onclick="runSetup()" style="width: 100%; font-size: 0.85rem; padding: 10px 14px;">
+              ⚙️ Setup Database Baru
+            </button>
+          </div>
+
+          <div style="border: 1px solid var(--border-glass); padding: var(--space-md); border-radius: var(--radius-md); border-left: 4px solid var(--secondary);">
+            <div style="font-weight: 700; color: var(--secondary); margin-bottom: 4px; font-size: 0.9rem;">📥 Migrasi Data Lama</div>
+            <p style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: var(--space-sm);">
+              Salin data planner dari format spreadsheet bulanan lama Anda ke spreadsheet database yang saat ini terhubung.
+            </p>
+            <button class="btn btn-secondary" onclick="runMigration()" style="width: 100%; font-size: 0.85rem; padding: 10px 14px; background: rgba(139, 92, 246, 0.15); color: #a78bfa; border-color: rgba(139, 92, 246, 0.2);">
+              📥 Jalankan Migrasi Data
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Notification & Calendar Integration Card -->
+      <div class="glass-card" style="padding: var(--space-xl); grid-column: span 1;">
+        <h3 style="margin-bottom: var(--space-md); display: flex; align-items: center; gap: 8px;">
+          <span>🤖</span> Integrasi Notifikasi & Kalender
+        </h3>
+        <p style="color: var(--text-secondary); margin-bottom: var(--space-lg); font-size: 0.95rem;">
+          Hubungkan Dashboard dengan **Google Calendar** untuk sinkronisasi jadwal, dan **Fonnte** untuk notifikasi bot WhatsApp Grup.
+        </p>
+
+        <!-- Google Calendar Info -->
+        <div style="background: rgba(0,0,0,0.15); border: 1px solid var(--border-glass); padding: var(--space-md); border-radius: var(--radius-md); margin-bottom: var(--space-md);">
+          <div style="font-weight: 700; color: var(--secondary); margin-bottom: 4px; font-size: 0.9rem; display: flex; align-items: center; gap: 6px;">
+            <span>📅</span> Google Calendar
+          </div>
+          <div id="calendar-status-text" style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 6px;">
+            Memeriksa kalender...
+          </div>
+          <a href="#" id="calendar-link" target="_blank" class="btn btn-secondary" style="display: none; width: fit-content; font-size: 0.8rem; padding: 6px 12px; text-decoration: none;">
+            📅 Buka Google Calendar
+          </a>
+        </div>
+
+        <!-- Fonnte Settings -->
+        <div style="border: 1px solid var(--border-glass); padding: var(--space-md); border-radius: var(--radius-md); margin-bottom: var(--space-md);">
+          <div style="font-weight: 700; color: #a78bfa; margin-bottom: 8px; font-size: 0.9rem; display: flex; align-items: center; gap: 6px;">
+            <span>💬</span> WhatsApp Gateway (Fonnte)
+          </div>
+          
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label for="fonnte-token" style="font-size: 0.8rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Fonnte API Token</label>
+            <input type="password" id="fonnte-token" class="form-input" placeholder="Masukkan Fonnte API Token" style="width: 100%; margin-bottom: 0; font-size: 0.85rem; padding: 8px 12px;">
+            <div id="fonnte-token-masked" style="font-size: 0.75rem; color: var(--status-completed); margin-top: 4px; display: none;"></div>
+          </div>
+
+          <div class="form-group" style="margin-bottom: var(--space-sm);">
+            <label for="fonnte-target" style="font-size: 0.8rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Target WA (No HP / ID Grup / Nama Grup)</label>
+            <input type="text" id="fonnte-target" class="form-input" placeholder="Contoh: 120363xxx@g.us atau nama grup" style="width: 100%; margin-bottom: 0; font-size: 0.85rem; padding: 8px 12px;">
+          </div>
+          
+          <button class="btn btn-primary" onclick="saveIntegrationSettings()" style="width: 100%; font-size: 0.85rem; padding: 8px 12px; margin-top: 8px;">
+            💾 Simpan Pengaturan WA
+          </button>
+        </div>
+
+        <!-- Deadline Trigger settings -->
+        <div style="border: 1px solid var(--border-glass); padding: var(--space-md); border-radius: var(--radius-md); margin-bottom: var(--space-md);">
+          <div style="font-weight: 700; color: var(--status-urgent); margin-bottom: 6px; font-size: 0.9rem; display: flex; align-items: center; gap: 6px;">
+            <span>⏰</span> Scanner Deadline Harian (H-2 s.d H-0)
+          </div>
+          <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: var(--space-sm);">
+            Scanner harian otomatis akan memindai konten yang belum selesai dan mengirim pesan rangkuman ke grup WhatsApp Anda setiap jam 08.00 pagi.
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: var(--space-sm); font-size: 0.85rem;">
+            <span>Status:</span> 
+            <span id="trigger-status-badge" style="font-weight: bold;">Memuat...</span>
+          </div>
+          <div style="display: flex; gap: var(--space-sm);">
+            <button id="btn-activate-trigger" class="btn btn-secondary" onclick="toggleDeadlineTrigger(true)" style="flex: 1; font-size: 0.8rem; padding: 8px; border-color: rgba(52, 168, 83, 0.3); color: #34a853; background: rgba(52, 168, 83, 0.05);">
+              ▶️ Aktifkan
+            </button>
+            <button id="btn-deactivate-trigger" class="btn btn-secondary" onclick="toggleDeadlineTrigger(false)" style="flex: 1; font-size: 0.8rem; padding: 8px; border-color: rgba(234, 67, 53, 0.3); color: #ea4335; background: rgba(234, 67, 53, 0.05);">
+              ⏹️ Nonaktifkan
+            </button>
+          </div>
+        </div>
+
+        <!-- Uji Coba -->
+        <button class="btn btn-secondary" onclick="runIntegrationTest()" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.85rem; padding: 10px; background: rgba(255,255,255,0.03);">
+          🧪 Jalankan Uji Coba Integrasi (Tes WA & Kalender)
+        </button>
+      </div>
+      
+    </div>
+  </div>
+</section>

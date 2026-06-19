@@ -1,0 +1,105 @@
+<section id="view-dashboard" class="view active">
+  <!-- Header Row -->
+  <div class="view-header">
+    <h2 class="view-title">📊 Dashboard Konten</h2>
+    <div class="view-actions">
+      <div class="filter-group">
+        <select id="filter-month" class="form-select">
+          <option value="1">Januari</option>
+          <option value="2">Februari</option>
+          <option value="3">Maret</option>
+          <option value="4">April</option>
+          <option value="5">Mei</option>
+          <option value="6">Juni</option>
+          <option value="7">Juli</option>
+          <option value="8">Agustus</option>
+          <option value="9">September</option>
+          <option value="10">Oktober</option>
+          <option value="11">November</option>
+          <option value="12">Desember</option>
+        </select>
+        <select id="filter-year" class="form-select">
+          <option value="2024">2024</option>
+          <option value="2025">2025</option>
+          <option value="2026">2026</option>
+          <option value="2027">2027</option>
+          <option value="2028">2028</option>
+          <option value="2029">2029</option>
+          <option value="2030">2030</option>
+        </select>
+      </div>
+      <button id="btn-delete-selected" class="btn btn-danger" style="display: none;" onclick="deleteSelectedContents()">
+        <span>🗑️</span> Hapus Terpilih (<span id="delete-selected-count">0</span>)
+      </button>
+      <button id="btn-download-selected" class="btn btn-secondary" style="display: none; background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.2);" onclick="downloadSelectedFiles()">
+        <span>📥</span> Download Terpilih (<span id="download-selected-count">0</span>)
+      </button>
+      <button id="btn-add-bulk-content" class="btn btn-secondary" onclick="openBulkContentForm()">
+        <span>📚</span> Tambah Banyak
+      </button>
+      <button id="btn-add-content" class="btn btn-primary" onclick="openContentForm()">
+        <span>＋</span> Tambah Konten
+      </button>
+    </div>
+  </div>
+
+  <!-- Stats Cards Row - 4 glass cards in a grid -->
+  <div class="stats-grid">
+    <div class="stat-card glass-card" data-stat="total">
+      <div class="stat-icon">📄</div>
+      <div class="stat-info">
+        <div class="stat-number" id="stat-total">0</div>
+        <div class="stat-label">Total Konten</div>
+      </div>
+    </div>
+    <div class="stat-card glass-card" data-stat="inprogress">
+      <div class="stat-icon">⚡</div>
+      <div class="stat-info">
+        <div class="stat-number" id="stat-inprogress" style="color: #f59e0b">0</div>
+        <div class="stat-label">Sedang Dikerjakan</div>
+      </div>
+    </div>
+    <div class="stat-card glass-card" data-stat="review">
+      <div class="stat-icon">👁️</div>
+      <div class="stat-info">
+        <div class="stat-number" id="stat-review" style="color: #3b82f6">0</div>
+        <div class="stat-label">Dalam Review</div>
+      </div>
+    </div>
+    <div class="stat-card glass-card" data-stat="completed">
+      <div class="stat-icon">✅</div>
+      <div class="stat-info">
+        <div class="stat-number" id="stat-completed" style="color: #10b981">0</div>
+        <div class="stat-label">Selesai</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Data Table -->
+  <div class="table-container glass-card">
+    <table class="data-table" id="content-table">
+      <thead>
+        <tr>
+          <th style="width: 3%; min-width: 40px; text-align: center;"><input type="checkbox" id="check-all" onclick="toggleSelectAll(this)"></th>
+          <th style="width: 4%; min-width: 40px;">No</th>
+          <th style="width: 12%; min-width: 100px;">Tanggal Posting</th>
+          <th style="width: 28%; min-width: 180px;">Judul Konten</th>
+          <th style="width: 15%; min-width: 110px;">PIC</th>
+          <th style="width: 10%; min-width: 90px;">Platform</th>
+          <th style="width: 10%; min-width: 80px;">Rasio</th>
+          <th style="width: 10%; min-width: 100px;">Status</th>
+          <th style="width: 5%; min-width: 100px; text-align: center;">Aksi</th>
+        </tr>
+      </thead>
+      <tbody id="content-table-body">
+        <!-- Populated by JavaScript -->
+      </tbody>
+    </table>
+    <div id="empty-state" class="empty-state" style="display:none">
+      <div class="empty-icon">📭</div>
+      <h3>Belum Ada Konten</h3>
+      <p>Klik tombol "+ Tambah Konten" untuk mulai merencanakan konten.</p>
+      <pre id="debug-box" style="margin-top: 20px; font-size: 11px; color: #a5b4fc; text-align: left; background: rgba(0,0,0,0.4); padding: 15px; border-radius: 8px; display: none; overflow-x: auto; max-height: 250px; font-family: monospace; border: 1px solid rgba(255,255,255,0.08);"></pre>
+    </div>
+  </div>
+</section>

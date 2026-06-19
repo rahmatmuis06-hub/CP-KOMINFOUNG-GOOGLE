@@ -1,0 +1,47 @@
+<section id="view-calendar" class="view">
+  <!-- Header -->
+  <div class="view-header">
+    <h2 class="view-title">📅 Kalender Posting</h2>
+  </div>
+
+  <!-- Calendar Navigation -->
+  <div class="calendar-container glass-card">
+    <div class="calendar-nav">
+      <button id="btn-prev-month" class="btn btn-icon" aria-label="Bulan sebelumnya">◀</button>
+      <h3 id="calendar-month-label">Juni 2026</h3>
+      <button id="btn-next-month" class="btn btn-icon" aria-label="Bulan berikutnya">▶</button>
+    </div>
+
+    <!-- Day Headers -->
+    <div class="calendar-grid" id="calendar-grid">
+      <div class="calendar-day-header">Min</div>
+      <div class="calendar-day-header">Sen</div>
+      <div class="calendar-day-header">Sel</div>
+      <div class="calendar-day-header">Rab</div>
+      <div class="calendar-day-header">Kam</div>
+      <div class="calendar-day-header">Jum</div>
+      <div class="calendar-day-header">Sab</div>
+      <!-- Day cells will be populated by JavaScript -->
+    </div>
+
+    <!-- Legend -->
+    <div class="calendar-legend">
+      <div class="legend-item">
+        <span class="legend-dot" style="background: #64748b"></span>
+        <span>Draft</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-dot" style="background: #f59e0b"></span>
+        <span>In Progress</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-dot" style="background: #3b82f6"></span>
+        <span>Review</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-dot" style="background: #10b981"></span>
+        <span>Completed</span>
+      </div>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Kominfo - Content Planning</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <?!= include('StyleSheet'); ?>
+</head>
+<body>
+  <!-- Loading Overlay -->
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+  </div>
+  
+  <!-- Toast Container -->
+  <div id="toast-container"></div>
+  
+  <!-- App Layout -->
+  <div id="app">
+    <!-- Mobile hamburger button -->
+    <button id="hamburger-btn" aria-label="Menu">☰</button>
+    
+    <!-- Sidebar Overlay -->
+    <div class="sidebar-overlay" onclick="closeMobileSidebar()"></div>
+    
+    <?!= include('Sidebar'); ?>
+    
+    <main id="main-content">
+      <?!= include('Dashboard'); ?>
+      <?!= include('KanbanBoard'); ?>
+      <?!= include('CalendarView'); ?>
+      <?!= include('Statistics'); ?>
+      <?!= include('TeamView'); ?>
+      <?!= include('BulkContentForm'); ?>
+      <?!= include('ContentDetailView'); ?>
+      <?!= include('AdminView'); ?>
+      <?!= include('ProkerView'); ?>
+      <?!= include('KepanitiaanView'); ?>
+    </main>
+  </div>
+  
+  <!-- Modals -->
+  <?!= include('ContentForm'); ?>
+  <?!= include('UploadForm'); ?>
+  <?!= include('OnboardingGuide'); ?>
+  <?!= include('ProkerForm'); ?>
+  <?!= include('KepanitiaanForm'); ?>
+  
+  <?!= include('JavaScript'); ?>
+</body>
+</html>

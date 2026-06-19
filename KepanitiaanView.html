@@ -1,0 +1,46 @@
+<section id="view-kepanitiaan" class="view">
+  <!-- Header -->
+  <div class="view-header">
+    <h2 class="view-title">🤝 Kepanitiaan Kominfo</h2>
+    <div class="view-actions">
+      <button class="btn btn-primary" onclick="openKepanitiaanForm()">
+        <span>＋</span> Tambah Kegiatan
+      </button>
+    </div>
+  </div>
+
+  <!-- Leaderboard & Summary Row -->
+  <div style="display: grid; grid-template-columns: 1fr; gap: var(--space-lg); margin-bottom: var(--space-lg);">
+    <!-- Leaderboard Card -->
+    <div class="glass-card" style="padding: var(--space-xl);">
+      <h3 style="margin-bottom: var(--space-sm); display: flex; align-items: center; gap: 8px;">
+        <span>🏆</span> Papan Keaktifan Kepanitiaan (Leaderboard)
+      </h3>
+      <p style="color: var(--text-secondary); margin-bottom: var(--space-lg); font-size: 0.9rem;">
+        Frekuensi keterlibatan anggota Divisi Kominfo dalam kepanitiaan program kerja/event secara otomatis.
+      </p>
+      
+      <!-- Workload Chart Container -->
+      <div id="kepanitiaan-leaderboard-chart" class="workload-chart" style="display: flex; flex-direction: column; gap: 10px; max-height: 350px; overflow-y: auto; padding-right: 4px;">
+        <!-- Populated by JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Agenda Header -->
+  <div class="glass-card" style="padding: var(--space-md) var(--space-lg); margin-bottom: var(--space-md); border-left: 4px solid var(--primary); font-size: 0.85rem; color: var(--text-secondary); display: flex; align-items: center; gap: 8px;">
+    <span>ℹ️</span> Data kepanitiaan di bawah ini disinkronkan dari spreadsheet panitia. Anggota yang terlibat akan mendapat +1 poin keaktifan pada leaderboard di atas.
+  </div>
+
+  <!-- Month Grid -->
+  <div id="kepanitiaan-month-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--space-lg);">
+    <!-- Populated by JavaScript -->
+  </div>
+  
+  <!-- Empty State -->
+  <div id="kepanitiaan-empty-state" class="empty-state" style="display: none; padding: 4rem 2rem;">
+    <div class="empty-icon">🤝</div>
+    <h3>Belum Ada Data Kepanitiaan</h3>
+    <p>Data kepanitiaan kosong atau gagal dimuat dari spreadsheet.</p>
+  </div>
+</section>

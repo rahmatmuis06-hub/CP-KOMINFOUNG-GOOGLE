@@ -1,0 +1,45 @@
+<section id="view-proker" class="view">
+  <!-- Header -->
+  <div class="view-header">
+    <h2 class="view-title">📋 Program Kerja Kominfo</h2>
+    <div class="view-actions" style="display: flex; gap: var(--space-md); align-items: center;">
+      <div style="position: relative; width: 200px; max-width: 100%;">
+        <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-secondary);">🔍</span>
+        <input type="text" id="proker-search-input" class="form-input" placeholder="Cari program kerja..." oninput="filterProkerList()" style="padding-left: 2.2rem; margin-bottom: 0; font-size: 0.85rem; padding-top: 8px; padding-bottom: 8px;">
+      </div>
+      <button class="btn btn-primary" onclick="openProkerForm()" style="font-size: 0.85rem; padding-top: 8px; padding-bottom: 8px; white-space: nowrap;">
+        <span>＋</span> Tambah Proker
+      </button>
+    </div>
+  </div>
+
+  <!-- Info Banner -->
+  <div class="glass-card" style="padding: var(--space-md) var(--space-lg); margin-bottom: var(--space-md); border-left: 4px solid var(--secondary); font-size: 0.85rem; color: var(--text-secondary); display: flex; align-items: center; gap: 8px;">
+    <span>ℹ️</span> Data program kerja di bawah ini disinkronkan langsung dari Spreadsheet Perencanaan Proker GenBI Komsat UNG 2025.
+  </div>
+
+  <!-- Table Card -->
+  <div class="table-container glass-card">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 8%; text-align: center;">No</th>
+          <th style="width: 38%;">Program Kerja</th>
+          <th style="width: 18%;">Pelaksanaan</th>
+          <th style="width: 26%;">Rencana Bulan</th>
+          <th style="width: 10%; text-align: center;">Aksi</th>
+        </tr>
+      </thead>
+      <tbody id="proker-table-body">
+        <!-- Populated by JavaScript -->
+      </tbody>
+    </table>
+    
+    <!-- Empty State -->
+    <div id="proker-empty-state" class="empty-state" style="display: none; padding: 4rem 2rem;">
+      <div class="empty-icon">📋</div>
+      <h3>Tidak Ada Program Kerja</h3>
+      <p>Program kerja yang Anda cari tidak ditemukan.</p>
+    </div>
+  </div>
+</section>

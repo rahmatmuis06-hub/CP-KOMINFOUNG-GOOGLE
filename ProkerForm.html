@@ -1,0 +1,69 @@
+<div id="proker-form-modal" class="modal-overlay" style="display:none">
+  <div class="modal-content" style="max-width: 500px;">
+    <div class="modal-header">
+      <h2 id="proker-modal-title">Tambah Program Kerja</h2>
+      <button class="btn-close" onclick="closeProkerForm()">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="proker-form" onsubmit="handleProkerSubmit(event)">
+        <input type="hidden" id="proker-form-rowidx">
+        
+        <div class="form-group">
+          <label for="proker-form-no">🔢 Nomor Proker (No)</label>
+          <input type="text" id="proker-form-no" class="form-input" required placeholder="Contoh: 1, 2, atau 2a">
+        </div>
+        
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+          <label style="margin-bottom: 0;">📋 Nama Program Kerja</label>
+          <button type="button" id="proker-bulk-toggle" onclick="toggleProkerBulkMode()" class="btn" style="font-size:0.72rem; padding:2px 8px; border:1px solid var(--border-glass); background:rgba(255,255,255,0.05); color:var(--secondary); height:auto; margin:0; line-height:1;">Tambah Banyak</button>
+        </div>
+        
+        <div class="form-group" id="proker-single-group">
+          <input type="text" id="proker-form-name" class="form-input" required placeholder="Contoh: Rapat Koordinasi Bulanan">
+        </div>
+        
+        <div class="form-group" id="proker-bulk-group" style="display:none;">
+          <textarea id="proker-form-name-bulk" class="form-input" rows="4" placeholder="Masukkan nama program kerja, satu per baris.&#10;Contoh:&#10;Webinar Jurnalistik&#10;Pelatihan Fotografi&#10;Rapat Evaluasi"></textarea>
+          <span style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-top:4px;">Setiap baris akan disimpan sebagai program kerja baru dengan rincian pelaksanaan yang sama.</span>
+        </div>
+        
+        <div class="form-group">
+          <label for="proker-form-execution">📅 Keterangan Pelaksanaan</label>
+          <input type="text" id="proker-form-execution" class="form-input" required placeholder="Contoh: 1 Bulan Sekali atau Kondisional">
+        </div>
+        
+        <div class="form-group">
+          <label for="proker-form-freq">⚙️ Rencana Frekuensi</label>
+          <select id="proker-form-freq" class="form-select" onchange="handleProkerFreqChange(this.value)" required>
+            <option value="bulanan">Setiap Bulan (Feb - Des)</option>
+            <option value="tahunan">Setahun Sekali</option>
+            <option value="kustom" selected>Bulan Tertentu (Pilih Manual)</option>
+          </select>
+        </div>
+        
+        <!-- Month Checkboxes -->
+        <div class="form-group">
+          <label>📅 Pilihan Bulan Pelaksanaan</label>
+          <div id="proker-months-container" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px; background: rgba(0,0,0,0.15); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--border-glass);">
+            <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;"><input type="checkbox" class="proker-month-cb" value="Februari"> Februari</label>
+            <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;"><input type="checkbox" class="proker-month-cb" value="Maret"> Maret</label>
+            <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;"><input type="checkbox" class="proker-month-cb" value="April"> April</label>
+            <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;"><input type="checkbox" class="proker-month-cb" value="Mei"> Mei</label>
+            <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;"><input type="checkbox" class="proker-month-cb" value="Juni"> Juni</label>
+            <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;"><input type="checkbox" class="proker-month-cb" value="Juli"> Juli</label>
+            <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;"><input type="checkbox" class="proker-month-cb" value="Agustus"> Agustus</label>
+            <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;"><input type="checkbox" class="proker-month-cb" value="September"> September</label>
+            <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;"><input type="checkbox" class="proker-month-cb" value="Oktober"> Oktober</label>
+            <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;"><input type="checkbox" class="proker-month-cb" value="November"> November</label>
+            <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;"><input type="checkbox" class="proker-month-cb" value="Desember"> Desember</label>
+          </div>
+        </div>
+        
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeProkerForm()">Batal</button>
+          <button type="submit" class="btn btn-primary">💾 Simpan Proker</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
